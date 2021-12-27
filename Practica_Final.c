@@ -119,8 +119,6 @@ static portTASK_FUNCTION(Sensado_Distancia,pvParameters)
 
 /*************************RUTINAS DE INTERRUPCIÓN***************************/
 
-
-
 void ManejadorBotones(void)
 {
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
@@ -198,7 +196,7 @@ void configADC0_ISR(void)
 }
 
 /***************************FUNCIONES_AUXILIARES********************/
-int binary_lookup(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax)
+int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax)
 {
   int imid;
 
