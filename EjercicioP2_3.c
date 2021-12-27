@@ -5,7 +5,7 @@
 //
 //*****************************************************************************
 
-//ESTO ES UNA PRUEBA DE QUE SE SUBE BIEN
+//ESTO ES UNA PRUEBA DE QUE SE SUBE
 
 #include<stdbool.h>
 #include<stdint.h>
