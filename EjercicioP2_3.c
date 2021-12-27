@@ -4,7 +4,7 @@
 // Autores: Eva Gonzalez, Ignacio Herrero, Jose Manuel Cano
 //
 //*****************************************************************************
-//DANI ERES EL MEJOR
+//LA ULTIMA Y A CASA
 #include<stdbool.h>
 #include<stdint.h>
 #include<math.h>
