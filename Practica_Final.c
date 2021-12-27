@@ -60,6 +60,7 @@ static EventGroupHandle_t FlagsEventos;
 static TimerHandle_t manejador_timer;
 static QueueHandle_t cola_adc;
 static QueueHandle_t cola_encoder;
+static TaskHandle_t manejador_sensado_distancia;
 static int avance = 18;
 static int avance_corto = 12;
 
@@ -117,6 +118,34 @@ static portTASK_FUNCTION(Sensado_Distancia,pvParameters)
 }
 
 /*************************RUTINAS DE INTERRUPCIÓN***************************/
+
+
+
+void ManejadorBotones(void)
+{
+    signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
+
+    int32_t i32Status = GPIOIntStatus(GPIO_PORTF_BASE,ALL_BUTTONS);
+
+    // Boton izquierdo: suspende la tarea
+    if(((i32Status & LEFT_BUTTON) == LEFT_BUTTON))
+    {
+        vTaskSuspend(manejador_sensado_distancia);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
+    }
+    // Boton derecho: da comienzo a la tarea
+    if((i32Status & RIGHT_BUTTON) == RIGHT_BUTTON)
+    {
+        vTaskResume(manejador_sensado_distancia);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
+    }
+    GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS);  //limpiamos flags
+    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
+}
+
+
 
 /*Gestiona la interrupción del sensor de contacto para encerder el led rojo, y avisar a la tarea correspondiente*/
 void SensorContacto(void)
@@ -360,7 +389,7 @@ int main(void)
     TimerControlTrigger(TIMER2_BASE, TIMER_A, true);/*Dispara las interrupciones en los ADCs*/
 
     /**************************CREACIÓN DE TAREAS Y MECANISMOS FreeRTOS***************************/
-    if((xTaskCreate(Sensado_Distancia, (portCHAR *)"Sensado_Distancia", Sensado_Distancia_STACK,NULL, Sensado_Distancia_PRIORITY, NULL) != pdTRUE))
+    if((xTaskCreate(Sensado_Distancia, (portCHAR *)"Sensado_Distancia", Sensado_Distancia_STACK,NULL, Sensado_Distancia_PRIORITY, &manejador_sensado_distancia) != pdTRUE))
     {
         while(1);
     }
@@ -392,6 +421,9 @@ int main(void)
     {
         while (1);
     }
+
+
+    SysCtlDelay(5000*(SysCtlClockGet() / 3 / 1000));
 
 	vTaskStartScheduler();	//el RTOS habilita las interrupciones al entrar aqui, asi que no hace falta habilitarlas
 

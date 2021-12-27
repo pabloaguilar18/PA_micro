@@ -45,6 +45,7 @@ extern void _c_int00(void);
 extern void SensorContacto(void);
 extern void configADC0_ISR(void);
 extern void Encoder(void);
+extern void ManejadorBotones(void);
 
 //*****************************************************************************
 //
@@ -123,7 +124,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // Analog Comparator 2
     IntDefaultHandler,                      // System Control (PLL, OSC, BO)
     IntDefaultHandler,                      // FLASH Control
-    IntDefaultHandler,                      // GPIO Port F
+    ManejadorBotones,                       // GPIO Port F
     IntDefaultHandler,                      // GPIO Port G
     IntDefaultHandler,                      // GPIO Port H
     IntDefaultHandler,                      // UART2 Rx and Tx
