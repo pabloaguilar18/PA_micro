@@ -5,11 +5,11 @@
 //
 //*****************************************************************************
 
-//ESTO ES UNA PRUEBA DE QUE SE SUBE
-
 #include<stdbool.h>
 #include<stdint.h>
 #include<math.h>
+
+//prueba definitiva
 
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
