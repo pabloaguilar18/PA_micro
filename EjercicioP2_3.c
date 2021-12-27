@@ -4,12 +4,10 @@
 // Autores: Eva Gonzalez, Ignacio Herrero, Jose Manuel Cano
 //
 //*****************************************************************************
-
+//DANI ERES EL MEJOR
 #include<stdbool.h>
 #include<stdint.h>
 #include<math.h>
-
-//PRUEBA AUN MAS DEFINITIVA
 
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
