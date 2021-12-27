@@ -4,7 +4,7 @@
 // Autores: Daniel Torres Viudes y Pablo Aguilar Pérez
 //
 //*****************************************************************************
-//Practica_final
+//Practica_finalv2
 #include <stdbool.h>
 #include <stdint.h>
 #include <math.h>
