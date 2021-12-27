@@ -5,7 +5,7 @@
 //
 //*****************************************************************************
 
-//Hola soy Daniel
+//Hola soy Daniel Torres
 
 #include<stdbool.h>
 #include<stdint.h>
