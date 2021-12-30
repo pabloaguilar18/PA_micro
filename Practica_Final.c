@@ -98,6 +98,20 @@ void funcion()
         break;
 }
 
+void prueba2(){
+    case 1:
+        break;
+
+    case 2:
+        break;
+
+    case 3:
+        break;
+
+    case 4:
+        break;
+}
+
 /**********************TAREAS***********************/
 
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
