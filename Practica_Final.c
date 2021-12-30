@@ -73,12 +73,17 @@ int girar_robot(int grados);
 void mueve(int inc_der, int inc_izq);
 void mueve_derecha(int giro);
 
-void funcion()
+void prueba()
 {
-    case 1:
+    case 3:
         break;
-
-    case 2:
+    case 4:
+        break;
+    case 5:
+        break;
+    case 6:
+        break;
+    case 7:
         break;
 }
 
