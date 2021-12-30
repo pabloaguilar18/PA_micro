@@ -88,7 +88,7 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters)
     OTRA DUDA QUE TENGO YO
 
     ESA ES MI DUDA
-
+dfvsdfbd
     OTRA DUDA MAS
 
     while (1)
