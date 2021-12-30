@@ -82,22 +82,6 @@ void prueba()
        break;
 }
 
-
-void funcion()
-{
-    case 1:
-        break;
-
-    case 2:
-        break;
-
-    case 3:
-        break;
-
-    case 4:
-        break;
-}
-
 void prueba2(){
     case 1:
         break;
@@ -114,6 +98,13 @@ void prueba2(){
 
 void prueba3(){
     case 1:
+        break;
+}
+
+void prueba4(){
+    case 1:
+        break;
+    case 2:
         break;
 }
 
