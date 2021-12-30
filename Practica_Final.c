@@ -77,6 +77,9 @@ void prueba()
 {
     case 1:
         break;
+
+    case 2:
+        break;
 }
 
 /**********************TAREAS***********************/
