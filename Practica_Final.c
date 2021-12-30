@@ -85,6 +85,9 @@ void movimiento()
 void giro(){
 
 }
+void tirolina(){
+
+}
 
 void curva()
 {
