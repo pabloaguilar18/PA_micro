@@ -83,7 +83,12 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 //    int inc_der = 0.0;
 //    volatile int giro = 0.0;
 
+<<<<<<< HEAD
     OTRA DUDA QUE TENGO YO
+=======
+
+    ESA ES MI DUDA
+>>>>>>> branch 'main' of https://github.com/pabloaguilar18/PA_micro.git
 
 
     while (1)
