@@ -113,8 +113,6 @@ static portTASK_FUNCTION(Sensado_Distancia,pvParameters)
 
     while (1)
     {
-        hola
-
          inc_izq = mover_robot(avance);
          inc_der = mover_robot(avance);
          mueve(inc_der, inc_izq);
