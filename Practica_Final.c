@@ -75,10 +75,10 @@ void mueve_derecha(int giro);
 
 void funcion()
 {
-    case 1:
+    case 3:
         break;
 
-    case 2:
+    case 4:
         break;
 }
 

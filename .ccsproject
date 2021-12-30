@@ -3,4 +3,5 @@
 <projectOptions>
 	<deviceFamily value="TMS470"/>
 	<isTargetManual value="true"/>
+	<origin value="D:/CCS/ProyectosCCS/PA_micro/PA_micro/PA_micro"/>
 </projectOptions>
