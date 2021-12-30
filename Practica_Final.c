@@ -78,6 +78,8 @@ void mueve_derecha(int giro);
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
 static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 {
+   DUDA
+
     //IDEA: MAQUINA DE ESTADOS
 //    int inc_izq = 0.0;
 //    int inc_der = 0.0;
