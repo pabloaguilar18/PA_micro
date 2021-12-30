@@ -105,6 +105,15 @@ void movimiento()
        break;
 }
 
+void curva()
+{
+   case 1:
+       break;
+
+   case 2:
+       break;
+}
+
 /**********************TAREAS***********************/
 
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
