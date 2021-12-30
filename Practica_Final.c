@@ -67,6 +67,18 @@ static int avance_corto = 12;
 /*Constantes globales*/
 #define distancia_ruedas 8.5
 
+
+/*Definicion de tipos*/
+
+typedef enum {
+    BARRIDO,
+    APROXIMACIÓN_CAJA,
+
+
+} messageTypes;
+
+
+
 /*Cabeceras*/
 int mover_robot(int distancia);
 int girar_robot(int grados);
@@ -82,11 +94,61 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 //    int inc_izq = 0.0;
 //    int inc_der = 0.0;
 //    volatile int giro = 0.0;
-
-    UN CAMBIO
+    EventBits_t respuesta;
 
     while (1)
     {
+
+  /*
+   *  flags-> espera el evento
+   *
+   *  Parto de un estado inical-> barrido. Estado inicial es una v.global
+   *
+   *  El evento permite seleccionar una accion dentro de dicho estado
+   *
+   *  Exite un evento que me permite actualizar mi estado
+   *
+   */
+
+
+
+
+    respuesta = xEventGroupWaitBits(FlagsEventos, ADC_0 | ADC_1 | SW, pdTRUE,
+       pdFALSE,portMAX_DELAY);
+
+
+
+        switch (estado)
+        //Estado puede ser un enumerado
+        {
+
+        case BARRIDO:
+
+            if ((respuesta & ADC_0) == ADC_0) //He encontrado una caja
+            {
+
+                //Cambio de estado -> estado = 1
+
+            }
+
+            break;
+
+        case APROXIMACIÓN_CAJA:
+
+            //...
+
+            break;
+
+        }
+
+
+
+
+
+
+
+
+
 //         inc_izq = mover_robot(avance);
 //         inc_der = mover_robot(avance);
 //         mueve(inc_der, inc_izq);
