@@ -73,6 +73,12 @@ int girar_robot(int grados);
 void mueve(int inc_der, int inc_izq);
 void mueve_derecha(int giro);
 
+void prueba()
+{
+    case 1:
+        break;
+}
+
 /**********************TAREAS***********************/
 
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
