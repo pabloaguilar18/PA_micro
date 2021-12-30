@@ -112,6 +112,11 @@ void prueba2(){
         break;
 }
 
+void prueba3(){
+    case 1:
+        break;
+}
+
 /**********************TAREAS***********************/
 
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
