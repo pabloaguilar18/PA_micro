@@ -107,9 +107,16 @@ void cascada{
 static portTASK_FUNCTION(Sensado_Distancia,pvParameters)
 {
     //IDEA: MAQUINA DE ESTADOS
+<<<<<<< Updated upstream
 //    int inc_izq = 0.0;
 //    int inc_der = 0.0;
 //    volatile int giro = 0.0;
+=======
+    int inc_izq = 0.0;
+    int inc_der = 0.0;
+    volatile int giro = 0.0;
+    hola
+>>>>>>> Stashed changes
 
     while (1)
     {
