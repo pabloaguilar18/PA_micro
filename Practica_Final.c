@@ -86,14 +86,17 @@ void giro(){
 
 }
 
-void curva()
-{
-   case 1:
-       break;
+void cascada{
 
-   case 2:
-       break;
 }
+//void curva()
+//{
+//   case 1:
+//       break;
+//
+//   case 2:
+//       break;
+//}
 
 /**********************TAREAS***********************/
 
