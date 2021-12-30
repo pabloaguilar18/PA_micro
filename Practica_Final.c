@@ -78,17 +78,11 @@ void mueve_derecha(int giro);
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
 static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 {
-   DUDA
-
     //IDEA: MAQUINA DE ESTADOS
 //    int inc_izq = 0.0;
 //    int inc_der = 0.0;
 //    volatile int giro = 0.0;
-
-    OTRA DUDA QUE TENGO YO
-
-    ESA ES MI DUDA
-
+<sdfSDFsdfaSDFASDF
     while (1)
     {
 //         inc_izq = mover_robot(avance);
