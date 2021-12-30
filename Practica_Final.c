@@ -32,8 +32,8 @@
 #include "drivers/rgb.h"
 
 /*Parámetros de tareas: tamaño de pila y prioridad*/
-#define Sensado_Distancia_STACK (256)
-#define Sensado_Distancia_PRIORITY (tskIDLE_PRIORITY+1)
+#define Maquina_Estados_STACK (256)
+#define Maquina_Estados_PRIORITY (tskIDLE_PRIORITY+1)
 
 /*Parámetros motores*/
 #define PERIOD_PWM 12500  // Periodo de 20ms
@@ -60,7 +60,7 @@ static EventGroupHandle_t FlagsEventos;
 static TimerHandle_t manejador_timer;
 static QueueHandle_t cola_adc;
 static QueueHandle_t cola_encoder;
-static TaskHandle_t manejador_sensado_distancia;
+static TaskHandle_t Manejador_Maquina_Estados;
 static int avance = 18;
 static int avance_corto = 12;
 
@@ -73,35 +73,9 @@ int girar_robot(int grados);
 void mueve(int inc_der, int inc_izq);
 void mueve_derecha(int giro);
 
-void movimiento()
-{
-   case 1:
-       break;
-
-   case 2:
-       break;
-}
-
-void giro(){
-
-}
-
-void cascada{
-
-}
-//void curva()
-//{
-//   case 1:
-//       break;
-//
-//   case 2:
-//       break;
-//}
-
 /**********************TAREAS***********************/
 
-/*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
-static portTASK_FUNCTION(Sensado_Distancia,pvParameters)
+static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 {
     //IDEA: MAQUINA DE ESTADOS
     int inc_izq = 0.0;
@@ -110,35 +84,35 @@ static portTASK_FUNCTION(Sensado_Distancia,pvParameters)
 
     while (1)
     {
-         inc_izq = mover_robot(avance);
-         inc_der = mover_robot(avance);
-         mueve(inc_der, inc_izq);
-
-         giro = girar_robot(90);
-         giro++;
-         mueve_derecha(giro);
-
-         inc_izq = mover_robot(avance_corto);
-         inc_der = mover_robot(avance_corto);
-         mueve(inc_der, inc_izq);
-
-         giro = girar_robot(90);
-         mueve_derecha(giro);
-
-         inc_izq = mover_robot(avance);
-         inc_der = mover_robot(avance);
-         mueve(inc_der, inc_izq);
-
-         giro = girar_robot(90);
-         giro++;
-         mueve_derecha(giro);
-
-         inc_izq = mover_robot(avance_corto);
-         inc_der = mover_robot(avance_corto);
-         mueve(inc_der, inc_izq);
-
-         giro = girar_robot(90);
-         mueve_derecha(giro);
+//         inc_izq = mover_robot(avance);
+//         inc_der = mover_robot(avance);
+//         mueve(inc_der, inc_izq);
+//
+//         giro = girar_robot(90);
+//         giro++;
+//         mueve_derecha(giro);
+//
+//         inc_izq = mover_robot(avance_corto);
+//         inc_der = mover_robot(avance_corto);
+//         mueve(inc_der, inc_izq);
+//
+//         giro = girar_robot(90);
+//         mueve_derecha(giro);
+//
+//         inc_izq = mover_robot(avance);
+//         inc_der = mover_robot(avance);
+//         mueve(inc_der, inc_izq);
+//
+//         giro = girar_robot(90);
+//         giro++;
+//         mueve_derecha(giro);
+//
+//         inc_izq = mover_robot(avance_corto);
+//         inc_der = mover_robot(avance_corto);
+//         mueve(inc_der, inc_izq);
+//
+//         giro = girar_robot(90);
+//         mueve_derecha(giro);
    }
 }
 
@@ -412,7 +386,7 @@ int main(void)
     TimerControlTrigger(TIMER2_BASE, TIMER_A, true);/*Dispara las interrupciones en los ADCs*/
 
     /**************************CREACIÓN DE TAREAS Y MECANISMOS FreeRTOS***************************/
-    if((xTaskCreate(Sensado_Distancia, (portCHAR *)"Sensado_Distancia", Sensado_Distancia_STACK,NULL, Sensado_Distancia_PRIORITY, &manejador_sensado_distancia) != pdTRUE))
+    if((xTaskCreate(Maquina_Estados, (portCHAR *)"Maquina_Estados", Maquina_Estados_STACK,NULL, Maquina_Estados_PRIORITY, &Manejador_Maquina_Estados) != pdTRUE))
     {
         while(1);
     }
