@@ -108,6 +108,10 @@ void prueba4(){
         break;
 }
 
+void giro(){
+
+}
+
 /**********************TAREAS***********************/
 
 /*TAREA PARA LA GESTIÓN DE LA CONMUTACIÓN DE LEDs POR ENCODER*/
