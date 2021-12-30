@@ -96,16 +96,13 @@ void prueba2(){
         break;
 }
 
-void prueba3(){
-    case 1:
-        break;
-}
+void movimiento()
+{
+   case 1:
+       break;
 
-void prueba4(){
-    case 1:
-        break;
-    case 2:
-        break;
+   case 2:
+       break;
 }
 
 /**********************TAREAS***********************/
