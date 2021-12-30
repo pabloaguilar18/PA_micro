@@ -89,6 +89,8 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 
     ESA ES MI DUDA
 
+    OTRA DUDA MAS
+
     while (1)
     {
 //         inc_izq = mover_robot(avance);
