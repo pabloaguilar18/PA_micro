@@ -83,6 +83,9 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters)
 //    int inc_der = 0.0;
 //    volatile int giro = 0.0;
 
+    OTRA DUDA QUE TENGO YO
+
+
     while (1)
     {
 //         inc_izq = mover_robot(avance);
