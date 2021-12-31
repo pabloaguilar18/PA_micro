@@ -42,8 +42,9 @@ static void IntDefaultHandler(void);
 //
 //*****************************************************************************
 extern void _c_int00(void);
-extern void SensorContacto(void);
 extern void configADC0_ISR(void);
+extern void SensorContacto(void);
+extern void configADC1_ISR(void);
 extern void Encoder(void);
 extern void ManejadorBotones(void);
 
@@ -110,7 +111,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // Quadrature Encoder 0
     IntDefaultHandler,                      // ADC Sequence 0
     configADC0_ISR,                         // ADC Sequence 1
-    IntDefaultHandler,                      // ADC Sequence 2
+    configADC1_ISR,                         // ADC Sequence 2
     IntDefaultHandler,                      // ADC Sequence 3
     IntDefaultHandler,                      // Watchdog timer
     IntDefaultHandler,                      // Timer 0 subtimer A
