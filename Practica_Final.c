@@ -74,7 +74,7 @@ const uint32_t TAMAN = 11;
 const uint32_t TAMA = 21;
 
 /*Definicion de tipos*/
-typedef enum{
+typedef enum{                                                                                                            //PABLO
     BARRIDO,
     APROXIMACIÓN_CAJA,
 }Estado;
@@ -87,7 +87,7 @@ void mueve_derecha(int giro);
 
 /**********************TAREAS***********************/
 
-static portTASK_FUNCTION(Maquina_Estados,pvParameters){
+static portTASK_FUNCTION(Maquina_Estados,pvParameters){                                                                 //PABLO
     EventBits_t respuesta;
 
     Estado est = BARRIDO;
@@ -161,7 +161,7 @@ void ManejadorBotones(void){
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
-void SensorContacto(void){ //Informa a la tarea del LED_rojo activado -> choque                         //HABRÁ QUE CAMBIAR LO QUE HACE
+void SensorContacto(void){ //Informa a la tarea del LED_rojo activado -> choque                                                   //PABLO
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
 
@@ -169,7 +169,7 @@ void SensorContacto(void){ //Informa a la tarea del LED_rojo activado -> choque 
 }
 
 /*Gestiona la interrupción del pin gpio asociado a los encoders de los motores*/
-void Encoder(void){                                                                             //DUDA DE PONER OTRO PUERTO E INTERRUPCIÓN?
+void Encoder(void){                                                                                                              //DANI
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
     //uint32_t dato = GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_2 | GPIO_PIN_6);
     uint32_t dato;
@@ -183,7 +183,7 @@ void Encoder(void){                                                             
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
-void configADC0_ISR(void){
+void configADC0_ISR(void){                                                                                                                 //PROBAR
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
     uint32_t dato[4];
@@ -201,7 +201,7 @@ void configADC0_ISR(void){
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
-void configADC1_ISR(void){
+void configADC1_ISR(void){                                                                                                                  //PROBAR
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
     uint32_t dato[4];
@@ -254,7 +254,7 @@ int girar_robot(int grados){
     return num_sectores;
 }
 
-void mueve(int inc_der, int inc_izq){
+void mueve(int inc_der, int inc_izq){                                                                                                       //DANI
     uint32_t dato;
 
     while ((inc_der >= 0) && (inc_izq >= 0)){
@@ -262,19 +262,22 @@ void mueve(int inc_der, int inc_izq){
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
 
         xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-
-        if (dato == 4) inc_izq--;
-        if (dato == 64) inc_der--;
-        if (dato == 68){
+        if(dato == 2 || dato == 128 || dato == 130 || dato == 6 || dato == 66 || dato == 70 || dato == 132 || dato == 192 || dato == 196){
+            inc_izq = -1;
+            inc_der = -1;
+        }
+        else if (dato == 68){
             inc_izq--;
             inc_der--;
         }
+        else if (dato == 4) inc_izq--;
+        else if (dato == 64) inc_der--;
     }
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
 }
 
-void mueve_derecha(int giro){
+void mueve_derecha(int giro){                                                                                                               //DANI
     uint32_t dato;
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
 
