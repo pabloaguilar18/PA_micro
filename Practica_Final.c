@@ -70,76 +70,74 @@ const uint32_t TAMAN = 11;
 const uint32_t TAMA = 21;
 
 /*Definicion de tipos*/
-typedef enum{                                                                                                            //PABLO
+typedef enum{
     BARRIDO,
     CAJA_LOCALIZADA,
     APROXIMACIÓN_CAJA,
 }Estado;
 
 /*Cabeceras*/
-int mover_robot(int distancia);
-int girar_robot(int grados);
-void mueve(int inc_der, int inc_izq);
-void mueve_derecha(int giro);
+int calculo_sectores_recta(int distancia);
+int calculo_sectores_giro(int grados);
+void avanzar(int inc_der, int inc_izq);
+void girar(int giro);
 
 /**********************TAREAS***********************/
 
-static portTASK_FUNCTION(Maquina_Estados,pvParameters){                                                                 //PABLO
+static portTASK_FUNCTION(Maquina_Estados,pvParameters){
     EventBits_t respuesta;
     Estado est = BARRIDO;
     int avance = 18;
     int avance_corto = 12;
+    int inc_izq = 0;
+    int inc_der = 0;
+    int giro = 0;
 
     while (1){
-        respuesta = xEventGroupWaitBits(FlagsEventos, sensor_contacto | caja_localizada | palo_localizado, pdTRUE, pdFALSE, portMAX_DELAY);
+        //respuesta = xEventGroupWaitBits(FlagsEventos, encoder | sensor_contacto | caja_localizada | palo_localizado, pdTRUE, pdFALSE, portMAX_DELAY);
 
         switch(est){
             case BARRIDO:
-                    giro = girar_robot(180) + 1;
-                    mueve_derecha(giro);
+                    giro = calculo_sectores_giro(360);
+                    girar(giro);
                 break;
             case CAJA_LOCALIZADA:
-                    giro = girar_robot(180) + 1;
-                    mueve_derecha(giro);
+                    giro = calculo_sectores_giro(360);
+                    girar(giro);
                 if((respuesta & ADC_0) == ADC_0){ //He encontrado una caja
                     //Cambio de estado -> estado = 1
                 }
                 break;
 
-            case APROXIMACIÓN_CAJA:
+         inc_izq = calculo_sectores_recta(avance);
+         inc_der = calculo_sectores_recta(avance);
+         avanzar(inc_der, inc_izq);
 
-                break;
-   }
+         giro = calculo_sectores_giro(90);
+         giro++;
+         girar(giro);
 
-//         inc_izq = mover_robot(avance);
-//         inc_der = mover_robot(avance);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         giro++;
-//         mueve_derecha(giro);
-//
-//         inc_izq = mover_robot(avance_corto);
-//         inc_der = mover_robot(avance_corto);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         mueve_derecha(giro);
-//
-//         inc_izq = mover_robot(avance);
-//         inc_der = mover_robot(avance);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         giro++;
-//         mueve_derecha(giro);
-//
-//         inc_izq = mover_robot(avance_corto);
-//         inc_der = mover_robot(avance_corto);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         mueve_derecha(giro);
+         inc_izq = calculo_sectores_recta(avance_corto);
+         inc_der = calculo_sectores_recta(avance_corto);
+         avanzar(inc_der, inc_izq);
+
+         giro = calculo_sectores_giro(90);
+         girar(giro);
+
+         inc_izq = calculo_sectores_recta(avance);
+         inc_der = calculo_sectores_recta(avance);
+         avanzar(inc_der, inc_izq);
+
+         giro = calculo_sectores_giro(90);
+         giro++;
+         girar(giro);
+
+         inc_izq = calculo_sectores_recta(avance_corto);
+         inc_der = calculo_sectores_recta(avance_corto);
+         avanzar(inc_der, inc_izq);
+
+         giro = calculo_sectores_giro(90);
+         girar(giro);
    }
 }
 
@@ -174,9 +172,8 @@ void SensorContacto(void){ //Informa que ya tiene dentro la caja
 }
 
 /*Gestiona la interrupción del pin gpio asociado a los encoders de los motores*/
-void Encoder(void){                                                                                                              //DANI
+void Encoder(void){
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
-    //uint32_t dato = GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_2 | GPIO_PIN_6);
     uint32_t dato;
 
     dato = GPIOIntStatus(GPIO_PORTD_BASE, true);
@@ -236,7 +233,7 @@ int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax)
     return imax;    //Al final imax = imin y en dicha posicion hay un numero mayor o igual que el buscado
 }
 
-int mover_robot(int distancia){
+int calculo_sectores_recta(int distancia){
     volatile double num_sectores = 0;
     volatile double angulo = 0;
 
@@ -247,7 +244,7 @@ int mover_robot(int distancia){
     return num_sectores;
 }
 
-int girar_robot(int grados){
+int calculo_sectores_giro(int grados){
     volatile double num_sectores = 0;
     volatile double rad = 0;
     volatile double distancia_recorrida = 0;
@@ -259,7 +256,7 @@ int girar_robot(int grados){
     return num_sectores;
 }
 
-void mueve(int inc_der, int inc_izq){                                                                                                       //DANI
+void avanzar(int inc_der, int inc_izq){
     uint32_t dato;
 
     while ((inc_der >= 0) && (inc_izq >= 0)){
@@ -267,7 +264,8 @@ void mueve(int inc_der, int inc_izq){                                           
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
 
         xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-        if(dato == 2 || dato == 128 || dato == 130 || dato == 6 || dato == 66 || dato == 70 || dato == 132 || dato == 192 || dato == 196){
+
+        if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)){
             inc_izq = -1;
             inc_der = -1;
         }
@@ -282,7 +280,7 @@ void mueve(int inc_der, int inc_izq){                                           
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
 }
 
-void mueve_derecha(int giro){                                                                                                               //DANI
+void girar(int giro){
     uint32_t dato;
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
 
@@ -291,7 +289,8 @@ void mueve_derecha(int giro){                                                   
 
         xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
-        if (dato == 4) giro--;
+        if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)) giro = -1;
+        else if (dato == 4) giro--;
     }
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
 }
