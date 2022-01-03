@@ -47,12 +47,10 @@
 #define COUNT_2MS_DER 1250 //Ciclos para amplitud de pulso de 2ms (max velocidad en el otro sentido)
 
 //Parámetros para la gestión de mecanismos FreeRTOS
-#define sensor_medio 0x000001
-#define encoder 0x000010
-#define LED_rojo 0x000100
-#define ADC_0 0x001000
-#define ADC_1 0x010000
-#define SW 0x100000
+#define encoder 0x00001
+#define sensor_contacto 0x00010
+#define caja_localizada 0x00100
+#define palo_localizado 0x01000
 
 //Variables globales
 uint32_t g_ui32CPUUsage;
@@ -61,8 +59,6 @@ static EventGroupHandle_t FlagsEventos;
 static QueueHandle_t cola_adc;
 static QueueHandle_t cola_encoder;
 static TaskHandle_t Manejador_Maquina_Estados;
-//static int avance = 18;
-//static int avance_corto = 12;
 
 /*Constantes globales*/
 #define distancia_ruedas 8.5
@@ -76,6 +72,7 @@ const uint32_t TAMA = 21;
 /*Definicion de tipos*/
 typedef enum{                                                                                                            //PABLO
     BARRIDO,
+    CAJA_LOCALIZADA,
     APROXIMACIÓN_CAJA,
 }Estado;
 
@@ -89,15 +86,21 @@ void mueve_derecha(int giro);
 
 static portTASK_FUNCTION(Maquina_Estados,pvParameters){                                                                 //PABLO
     EventBits_t respuesta;
-
     Estado est = BARRIDO;
+    int avance = 18;
+    int avance_corto = 12;
 
     while (1){
-        respuesta = xEventGroupWaitBits(FlagsEventos, ADC_0 | ADC_1 | SW, pdTRUE, pdFALSE, portMAX_DELAY);
+        respuesta = xEventGroupWaitBits(FlagsEventos, sensor_contacto | caja_localizada | palo_localizado, pdTRUE, pdFALSE, portMAX_DELAY);
 
-        switch(est){ //Estado puede ser un enumerado
+        switch(est){
             case BARRIDO:
-
+                    giro = girar_robot(180) + 1;
+                    mueve_derecha(giro);
+                break;
+            case CAJA_LOCALIZADA:
+                    giro = girar_robot(180) + 1;
+                    mueve_derecha(giro);
                 if((respuesta & ADC_0) == ADC_0){ //He encontrado una caja
                     //Cambio de estado -> estado = 1
                 }
@@ -161,10 +164,12 @@ void ManejadorBotones(void){
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
-void SensorContacto(void){ //Informa a la tarea del LED_rojo activado -> choque                                                   //PABLO
+void SensorContacto(void){ //Informa que ya tiene dentro la caja
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
+    xEventGroupSetBitsFromISR(FlagsEventos, sensor_contacto, &higherPriorityTaskWoken);
 
+    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_5);/*Limpia interrupción*/
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
