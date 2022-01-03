@@ -54,6 +54,7 @@
 #define ADC_1 0x010000
 #define SW 0x100000
 
+
 //Variables globales
 uint32_t g_ui32CPUUsage;
 uint32_t g_ulSystemClock;
@@ -61,8 +62,8 @@ static EventGroupHandle_t FlagsEventos;
 static QueueHandle_t cola_adc;
 static QueueHandle_t cola_encoder;
 static TaskHandle_t Manejador_Maquina_Estados;
-//static int avance = 18;
-//static int avance_corto = 12;
+static int avance = 18;
+static int avance_corto = 12;
 
 /*Constantes globales*/
 #define distancia_ruedas 8.5
@@ -92,51 +93,55 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters){                         
 
     Estado est = BARRIDO;
 
+    int inc_izq = 0;
+    int inc_der = 0;
+    int giro = 0;
+
     while (1){
-        respuesta = xEventGroupWaitBits(FlagsEventos, ADC_0 | ADC_1 | SW, pdTRUE, pdFALSE, portMAX_DELAY);
+//        respuesta = xEventGroupWaitBits(FlagsEventos, ADC_0 | ADC_1 | SW, pdTRUE, pdFALSE, portMAX_DELAY);
+//
+//        switch(est){ //Estado puede ser un enumerado
+//            case BARRIDO:
+//
+//                if((respuesta & ADC_0) == ADC_0){ //He encontrado una caja
+//                    //Cambio de estado -> estado = 1
+//                }
+//                break;
+//
+//            case APROXIMACIÓN_CAJA:
+//
+//                break;
+//   }
 
-        switch(est){ //Estado puede ser un enumerado
-            case BARRIDO:
+         inc_izq = mover_robot(avance);
+         inc_der = mover_robot(avance);
+         mueve(inc_der, inc_izq);
 
-                if((respuesta & ADC_0) == ADC_0){ //He encontrado una caja
-                    //Cambio de estado -> estado = 1
-                }
-                break;
+         giro = girar_robot(90);
+         giro++;
+         mueve_derecha(giro);
 
-            case APROXIMACIÓN_CAJA:
+         inc_izq = mover_robot(avance_corto);
+         inc_der = mover_robot(avance_corto);
+         mueve(inc_der, inc_izq);
 
-                break;
-   }
+         giro = girar_robot(90);
+         mueve_derecha(giro);
 
-//         inc_izq = mover_robot(avance);
-//         inc_der = mover_robot(avance);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         giro++;
-//         mueve_derecha(giro);
-//
-//         inc_izq = mover_robot(avance_corto);
-//         inc_der = mover_robot(avance_corto);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         mueve_derecha(giro);
-//
-//         inc_izq = mover_robot(avance);
-//         inc_der = mover_robot(avance);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         giro++;
-//         mueve_derecha(giro);
-//
-//         inc_izq = mover_robot(avance_corto);
-//         inc_der = mover_robot(avance_corto);
-//         mueve(inc_der, inc_izq);
-//
-//         giro = girar_robot(90);
-//         mueve_derecha(giro);
+         inc_izq = mover_robot(avance);
+         inc_der = mover_robot(avance);
+         mueve(inc_der, inc_izq);
+
+         giro = girar_robot(90);
+         giro++;
+         mueve_derecha(giro);
+
+         inc_izq = mover_robot(avance_corto);
+         inc_der = mover_robot(avance_corto);
+         mueve(inc_der, inc_izq);
+
+         giro = girar_robot(90);
+         mueve_derecha(giro);
    }
 }
 
@@ -262,7 +267,9 @@ void mueve(int inc_der, int inc_izq){                                           
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
 
         xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-        if(dato == 2 || dato == 128 || dato == 130 || dato == 6 || dato == 66 || dato == 70 || dato == 132 || dato == 192 || dato == 196){
+
+        if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7))
+        {
             inc_izq = -1;
             inc_der = -1;
         }
@@ -286,7 +293,15 @@ void mueve_derecha(int giro){                                                   
 
         xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
-        if (dato == 4) giro--;
+
+        if (((dato & GPIO_PIN_1) == GPIO_PIN_1)
+                || ((dato & GPIO_PIN_7) == GPIO_PIN_7))
+        {
+            giro = -1;
+        }
+        else if (dato == 4)
+            giro--;
+
     }
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
 }
