@@ -36,6 +36,8 @@
 /*Parámetros de tareas: tamaño de pila y prioridad*/
 #define Maquina_Estados_STACK (256)
 #define Maquina_Estados_PRIORITY (tskIDLE_PRIORITY+1)
+#define Avanzar_STACK (256)
+#define Avanzar_PRIORITY (tskIDLE_PRIORITY+1)
 
 /*Parámetros motores*/
 #define PERIOD_PWM 12500 //Periodo de 20ms
@@ -59,6 +61,9 @@ static EventGroupHandle_t FlagsEventos;
 static QueueHandle_t cola_adc;
 static QueueHandle_t cola_encoder;
 static TaskHandle_t Manejador_Maquina_Estados;
+static TaskHandle_t Manejador_Avanzar;
+
+SemaphoreHandle_t SemAvanzar = NULL;
 
 /*Constantes globales*/
 #define distancia_ruedas 8.5
@@ -84,7 +89,7 @@ void girar(int giro);
 
 /**********************TAREAS***********************/
 
-static portTASK_FUNCTION(Maquina_Estados,pvParameters){
+static portTASK_FUNCTION(Maquina_Estados, pvParameters){
     EventBits_t respuesta;
     Estado est = BARRIDO;
     int avance = 18;
@@ -98,17 +103,17 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters){
 
         switch(est){
             case BARRIDO:
-                    giro = calculo_sectores_giro(360);
-                    girar(giro);
+
                 break;
             case CAJA_LOCALIZADA:
-                    giro = calculo_sectores_giro(360);
-                    girar(giro);
-                if((respuesta & ADC_0) == ADC_0){ //He encontrado una caja
+                xSemaphoreGive(SemAvanzar);
+                vTaskResume(Manejador_Avanzar);
+
+                if((respuesta & caja_localizada) == caja_localizada){ //He encontrado una caja
                     //Cambio de estado -> estado = 1
                 }
                 break;
-
+        }
          inc_izq = calculo_sectores_recta(avance);
          inc_der = calculo_sectores_recta(avance);
          avanzar(inc_der, inc_izq);
@@ -138,6 +143,40 @@ static portTASK_FUNCTION(Maquina_Estados,pvParameters){
 
          giro = calculo_sectores_giro(90);
          girar(giro);
+    }
+}
+
+static portTASK_FUNCTION(Avanzar, pvParameters){
+    uint32_t dato;
+    int avance = 18;
+
+    while (1){
+        xSemaphoreTake(SemAvanzar, portMAX_DELAY);
+
+        int inc_izq = calculo_sectores_recta(avance);
+        int inc_der = calculo_sectores_recta(avance);
+
+        while ((inc_der >= 0) && (inc_izq >= 0)){
+            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
+            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
+
+            xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
+
+            if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)){
+                inc_izq = -1;
+                inc_der = -1;
+            }
+            else if (dato == 68){
+                inc_izq--;
+                inc_der--;
+            }
+            else if (dato == 4) inc_izq--;
+            else if (dato == 64) inc_der--;
+        }
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
+
+        vTaskSuspend(Manejador_Avanzar);
    }
 }
 
@@ -198,7 +237,7 @@ void configADC0_ISR(void){                                                      
     dato_final = dato[0];
 
     xQueueSendFromISR(cola_adc, &dato_final, &higherPriorityTaskWoken); //Guardamos en la cola
-    xEventGroupSetBitsFromISR(FlagsEventos,sensor_medio, &higherPriorityTaskWoken);
+    xEventGroupSetBitsFromISR(FlagsEventos,caja_localizada, &higherPriorityTaskWoken);
 
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
@@ -216,7 +255,7 @@ void configADC1_ISR(void){                                                      
     dato_final = dato[1];
 
     xQueueSendFromISR(cola_adc, &dato_final, &higherPriorityTaskWoken); //Guardamos en la cola
-    xEventGroupSetBitsFromISR(FlagsEventos,sensor_medio, &higherPriorityTaskWoken);
+    xEventGroupSetBitsFromISR(FlagsEventos,palo_localizado, &higherPriorityTaskWoken);
 
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
@@ -390,6 +429,17 @@ int main(void){
     /**************************CREACIÓN DE TAREAS Y MECANISMOS FreeRTOS***************************/
     if((xTaskCreate(Maquina_Estados, (portCHAR *)"Maquina_Estados", Maquina_Estados_STACK, NULL, Maquina_Estados_PRIORITY, &Manejador_Maquina_Estados) != pdTRUE)){
         while(1);
+    }
+
+    if((xTaskCreate(Avanzar, (portCHAR *)"Avanzar", Avanzar_STACK, NULL, Avanzar_PRIORITY, &Manejador_Avanzar) != pdTRUE)){
+        while(1);
+    }
+
+    vTaskSuspend(Manejador_Avanzar);
+
+    SemAvanzar = xSemaphoreCreateBinary();    //Creo el semaforo
+    if ((SemAvanzar == NULL)){
+        while (1);
     }
 
     FlagsEventos = xEventGroupCreate();
