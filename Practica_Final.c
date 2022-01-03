@@ -90,10 +90,12 @@ void mueve_derecha(int giro);
 static portTASK_FUNCTION(Maquina_Estados,pvParameters){
     EventBits_t respuesta;
 
+    Estado est = BARRIDO;
+
     while (1){
         respuesta = xEventGroupWaitBits(FlagsEventos, ADC_0 | ADC_1 | SW, pdTRUE, pdFALSE, portMAX_DELAY);
 
-        switch(Estado){ //Estado puede ser un enumerado
+        switch(est){ //Estado puede ser un enumerado
             case BARRIDO:
 
                 if((respuesta & ADC_0) == ADC_0){ //He encontrado una caja
