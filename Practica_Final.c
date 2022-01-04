@@ -150,7 +150,6 @@ static portTASK_FUNCTION(Maquina_Estados, pvParameters){
 static portTASK_FUNCTION(Girar, pvParameters){ //TAREA DEL BARRIDO
     int angulo_giro = 360;
     EventBits_t respuesta;
-    int num_lineas = 0;
 
     while (1){
         int giro = calculo_sectores_giro(angulo_giro);
@@ -190,6 +189,7 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //TAREA APROXIMACIÓN
     uint32_t dato;
     int avance = 20;
     EventBits_t respuesta;
+    int num_lineas = 0;
 
     while (1){
         int inc_izq = calculo_sectores_recta(avance);
@@ -570,7 +570,7 @@ int main(void){
     cola_encoder = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola del encoder
     if (cola_encoder == NULL) while (1);
 
-    //SysCtlDelay(5000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 5 segundos antes de que empiece el programa
+    SysCtlDelay(3000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 5 segundos antes de que empiece el programa
 
 	vTaskStartScheduler();	//el RTOS habilita las interrupciones al entrar aqui, asi que no hace falta habilitarlas
 
