@@ -86,12 +86,16 @@ uint32_t TAMA = 21;
 
 /*Definicion de tipos*/
 typedef enum{
-    BARRIDO,
-    APROXIMACIÓN,
+    BARRIDO_CAJA,
+    BARRIDO_PALO,
+    APROXIMACIÓN_CAJA,
+    APROXIMACIÓN_PALO,
     CHOQUE_LINEA,
+    RECHOQUE,
+    CAJA_COLOCADA,
 }Estado;
 
-Estado est = BARRIDO;
+Estado est = BARRIDO_CAJA;
 
 /*Cabeceras*/
 int calculo_sectores_recta(int distancia);
@@ -105,13 +109,38 @@ int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax)
 static portTASK_FUNCTION(Maquina_Estados, pvParameters){
     while (1){
         switch(est){
-            case BARRIDO:
+            case BARRIDO_CAJA:
+                vTaskSuspend(Manejador_Avanzar);
+                vTaskSuspend(Manejador_Choque_Linea);
+                IntDisable(INT_GPIOB); //DESHABILITO EL SENSOR DE CONTACTO
+                ADCIntDisable(ADC0_BASE, 2);
+                ADCIntEnable(ADC0_BASE, 1);
                 vTaskResume(Manejador_Girar);
                 break;
-            case APROXIMACIÓN:
+            case BARRIDO_PALO:
+                IntDisable(INT_GPIOB);
+                ADCIntDisable(ADC0_BASE, 1);
+                ADCIntEnable(ADC0_BASE, 2);
+                vTaskResume(Manejador_Girar);
+                break;
+            case APROXIMACIÓN_CAJA:
+                IntEnable(INT_GPIOB);
+                ADCIntDisable(ADC0_BASE, 1);
+                vTaskResume(Manejador_Avanzar);
+                break;
+            case APROXIMACIÓN_PALO:
+                ADCIntDisable(ADC0_BASE, 2);
                 vTaskResume(Manejador_Avanzar);
                 break;
             case CHOQUE_LINEA:
+                IntDisable(INT_GPIOB);
+                ADCIntDisable(ADC0_BASE, 1);
+                vTaskResume(Manejador_Choque_Linea);
+                break;
+            case RECHOQUE:
+                vTaskResume(Manejador_Choque_Linea);
+                break;
+            case CAJA_COLOCADA:
                 vTaskResume(Manejador_Choque_Linea);
                 break;
         }
@@ -121,11 +150,12 @@ static portTASK_FUNCTION(Maquina_Estados, pvParameters){
 static portTASK_FUNCTION(Girar, pvParameters){ //TAREA DEL BARRIDO
     int angulo_giro = 360;
     EventBits_t respuesta;
+    int num_lineas = 0;
 
     while (1){
         int giro = calculo_sectores_giro(angulo_giro);
 
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
 
         while (giro >= 0){
@@ -137,20 +167,21 @@ static portTASK_FUNCTION(Girar, pvParameters){ //TAREA DEL BARRIDO
             }
             else if ((respuesta & caja_localizada) == caja_localizada){
                    giro = -1;
-                   est = APROXIMACIÓN;
+                   est = APROXIMACIÓN_CAJA;
             }
             else if ((respuesta & palo_localizado) == palo_localizado){
                    giro = -1;
-                   est = APROXIMACIÓN;
+                   est = APROXIMACIÓN_PALO;
             }
             else if ((respuesta & encoder) == encoder){
                 giro--;
                 if(giro < 0){
-                    est = APROXIMACIÓN;
+                    est = APROXIMACIÓN_CAJA;
                 }
             }
         }
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+
         vTaskSuspend(Manejador_Girar);
     }
 }
@@ -167,18 +198,22 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //TAREA APROXIMACIÓN
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_INF);
 
-        while ((inc_der >= 0) && (inc_izq >= 0)){
+        while ((inc_der >= 0) || (inc_izq >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | sensor_contacto, pdTRUE, pdFALSE, 10);
 
-            if ((respuesta & sensor_linea) == sensor_linea){
+            if (((respuesta & sensor_linea) == sensor_linea) && (est == APROXIMACIÓN_CAJA)){
                 inc_izq = -1;
                 inc_der = -1;
                 est = CHOQUE_LINEA;
             }
+            else if (((respuesta & sensor_linea) == sensor_linea) && (est == APROXIMACIÓN_PALO)){
+                num_lineas++;
+                if(num_lineas == 3) est = CAJA_COLOCADA;
+            }
             else if ((respuesta & sensor_contacto) == sensor_contacto){
                 inc_izq = -1;
                 inc_der = -1;
-                est = BARRIDO;
+                est = BARRIDO_PALO;
             }
             else if ((respuesta & encoder) == encoder){
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
@@ -194,7 +229,7 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //TAREA APROXIMACIÓN
                     inc_der--;
                 }
                 if((inc_izq < 0) && (inc_der < 0)){
-                    est = BARRIDO;
+                    est = BARRIDO_CAJA;
                 }
             }
         }
@@ -219,8 +254,8 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_INF);
 
-        while ((inc_der >= 0) && (inc_izq >= 0) && (giro >= 0)){
-            respuesta = xEventGroupWaitBits(FlagsEventos, encoder, pdTRUE, pdFALSE, portMAX_DELAY);
+        while ((inc_der >= 0) || (inc_izq >= 0) || (giro >= 0)){
+            respuesta = xEventGroupWaitBits(FlagsEventos, encoder | sensor_linea, pdTRUE, pdFALSE, portMAX_DELAY);
 
             if ((respuesta & encoder) == encoder){ /*Recibe información del choque y cambia de trayectoria*/
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
@@ -239,9 +274,15 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
                     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
                     giro--;
                     if(giro < 0){
-                        est = BARRIDO;
+                        est = BARRIDO_CAJA;
                     }
                 }
+            }
+            else if ((respuesta & sensor_linea) == sensor_linea){ /*Recibe información del choque y cambia de trayectoria*/
+                giro = -1;
+                inc_izq = -1;
+                inc_der = -1;
+                est = RECHOQUE;
             }
         }
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
@@ -256,11 +297,14 @@ static portTASK_FUNCTION(Sensado_Distancia, pvParameters){
     while (1){
         xQueueReceive(cola_adc, (void *)&dato, portMAX_DELAY);
 
-        indice_mediano = busqueda_distancia(TMuestras_SM, dato, 0, TAMAN);
-        indice_largo = busqueda_distancia(TMuestras_SL, dato, 0, TAMA);
-
-        if(TDistancias_SM[indice_mediano] >= 10 && TDistancias_SM[indice_mediano] <= 22) xEventGroupSetBits(FlagsEventos, caja_localizada);
-        else if(TDistancias_SL[indice_largo] >= 40 && TDistancias_SL[indice_largo] <= 72) xEventGroupSetBits(FlagsEventos, palo_localizado);
+        if(est == BARRIDO_CAJA){
+            indice_mediano = busqueda_distancia(TMuestras_SM, dato, 0, TAMAN);
+            if(TDistancias_SM[indice_mediano] >= 10 && TDistancias_SM[indice_mediano] <= 22) xEventGroupSetBits(FlagsEventos, caja_localizada);
+        }
+        else if(est == BARRIDO_PALO){
+            indice_largo = busqueda_distancia(TMuestras_SL, dato, 0, TAMA);
+            if(TDistancias_SL[indice_largo] >= 40 && TDistancias_SL[indice_largo] <= 72) xEventGroupSetBits(FlagsEventos, palo_localizado);
+        }
     }
 }
 
@@ -492,8 +536,8 @@ int main(void){
     //Habilita las interrupciones
     ADCIntClear(ADC0_BASE, 1);
     ADCIntClear(ADC0_BASE, 2);
-    ADCIntEnable(ADC0_BASE, 1);
-    ADCIntEnable(ADC0_BASE, 2);
+    //ADCIntEnable(ADC0_BASE, 1);
+    //ADCIntEnable(ADC0_BASE, 2);
     IntPrioritySet(INT_ADC0SS1, configMAX_SYSCALL_INTERRUPT_PRIORITY);
     IntPrioritySet(INT_ADC0SS2, configMAX_SYSCALL_INTERRUPT_PRIORITY);
     IntEnable(INT_ADC0SS1);
