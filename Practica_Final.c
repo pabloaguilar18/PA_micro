@@ -152,7 +152,7 @@ static portTASK_FUNCTION(Girar, pvParameters){ //TAREA DEL BARRIDO
     EventBits_t respuesta;
 
     while (1){
-        int giro = calculo_sectores_giro(angulo_giro);
+        int giro = (calculo_sectores_giro(angulo_giro))/2;
 
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
