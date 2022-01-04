@@ -9,7 +9,6 @@
 //PE3 ADC0 1 (MEDIA DISTANCIA S41)
 //PE2 ADC0 2 (LARGA DISTANCIA S21)
 
-//BAJAR VELOCIDAD MOTOREWS
 //CREAR TAREAS ADC, CHOQUE LÍNEA, ETC...
 //DARLE PRIORIDAD Y COMUNICAR LAS TAREAS
 
@@ -39,22 +38,23 @@
 
 /*Parámetros de tareas: tamaño de pila y prioridad*/
 #define Maquina_Estados_STACK (256)
-#define Maquina_Estados_PRIORITY (tskIDLE_PRIORITY+1)
+#define Maquina_Estados_PRIORITY (tskIDLE_PRIORITY + 1)
 #define Avanzar_STACK (256)
-#define Avanzar_PRIORITY (tskIDLE_PRIORITY+1)
+#define Avanzar_PRIORITY (tskIDLE_PRIORITY + 1)
 #define Girar_STACK (256)
-#define Girar_PRIORITY (tskIDLE_PRIORITY+1)
-//#define Sensado_Distancia_STACK (256)
-//#define Sensado_Distancia_PRIORITY (tskIDLE_PRIORITY+1)
+#define Girar_PRIORITY (tskIDLE_PRIORITY + 1)
+#define Choque_Linea_STACK (256)
+#define Choque_Linea_PRIORITY (tskIDLE_PRIORITY + 1)
+#define Sensado_Distancia_STACK (256)
+#define Sensado_Distancia_PRIORITY (tskIDLE_PRIORITY + 1)
 
 /*Parámetros motores*/
 #define PERIOD_PWM 12500 //Periodo de 20ms
-#define COUNT_1MS_IZQ 625 //Ciclos para amplitud de pulso de 1ms (max velocidad en un sentido)
-#define COUNT_1MS_DER 625 //Ciclos para amplitud de pulso de 1ms (max velocidad en un sentido)
-#define STOPCOUNT_IZQ 950 //Ciclos para amplitud de pulso de parada (1.52ms)
-#define STOPCOUNT_DER 950 //Ciclos para amplitud de pulso de parada (1.52ms)
-#define COUNT_2MS_IZQ 1250 //Ciclos para amplitud de pulso de 2ms (max velocidad en el otro sentido)
-#define COUNT_2MS_DER 1250 //Ciclos para amplitud de pulso de 2ms (max velocidad en el otro sentido)
+#define COUNT_1MS 625 //Ciclos para amplitud de pulso de 1ms (max velocidad en un sentido)
+#define STOPCOUNT 950 //Ciclos para amplitud de pulso de parada (1.52ms)
+#define COUNT_2MS 1250 //Ciclos para amplitud de pulso de 2ms (max velocidad en el otro sentido)
+#define VEL_MEDIA_SUP 1100 //Velocidad media superior
+#define VEL_MEDIA_INF 787 //Velocidad media inferior
 
 //Parámetros para la gestión de mecanismos FreeRTOS
 #define encoder 0x00001
@@ -72,23 +72,23 @@ static QueueHandle_t cola_encoder;
 static TaskHandle_t Manejador_Maquina_Estados;
 static TaskHandle_t Manejador_Avanzar;
 static TaskHandle_t Manejador_Girar;
-//static TaskHandle_t Manejador_Sensado_Distancia;
+static TaskHandle_t Manejador_Choque_Linea;
+static TaskHandle_t Manejador_Sensado_Distancia;
 
 /*Constantes globales*/
 #define distancia_ruedas 8.5
-const uint32_t TMuestras_SM[]   = {598, 623, 697, 770, 840, 990, 1107, 1255, 1454, 1817, 2302};
-const uint32_t TDistancias_SM[] = { 26,  24,  22,  20,  18,  16,   14,   12,   10,    8,    6};
-const uint32_t TMuestras_SL[]   = {452, 480, 500, 528, 550, 575, 602, 624, 648, 673, 698, 720, 744, 794, 822, 872, 923, 970, 1000, 1063, 1114};
-const uint32_t TDistancias_SL[] = { 80,  76,  72,  68,  64,  60,  58,  56,  54,  52,  50,  48,  46,  44,  42,  40,  38,  36,   34,   32,   30};
-const uint32_t TAMAN = 11;
-const uint32_t TAMA = 21;
+uint32_t TMuestras_SM[]   = {598, 623, 697, 770, 840, 990, 1107, 1255, 1454, 1817, 2302};
+uint32_t TDistancias_SM[] = { 26,  24,  22,  20,  18,  16,   14,   12,   10,    8,    6};
+uint32_t TMuestras_SL[]   = {452, 480, 500, 528, 550, 575, 602, 624, 648, 673, 698, 720, 744, 794, 822, 872, 923, 970, 1000, 1063, 1114};
+uint32_t TDistancias_SL[] = { 80,  76,  72,  68,  64,  60,  58,  56,  54,  52,  50,  48,  46,  44,  42,  40,  38,  36,   34,   32,   30};
+uint32_t TAMAN = 11;
+uint32_t TAMA = 21;
 
 /*Definicion de tipos*/
 typedef enum{
     BARRIDO,
-    APROXIMACIÓN_CAJA,
+    APROXIMACIÓN,
     CHOQUE_LINEA,
-    BARRIDO_PALO,
 }Estado;
 
 Estado est = BARRIDO;
@@ -98,6 +98,7 @@ int calculo_sectores_recta(int distancia);
 int calculo_sectores_giro(int grados);
 void avanzar(int inc_der, int inc_izq);
 void girar(int giro);
+int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax);
 
 /**********************TAREAS***********************/
 
@@ -107,30 +108,64 @@ static portTASK_FUNCTION(Maquina_Estados, pvParameters){
             case BARRIDO:
                 vTaskResume(Manejador_Girar);
                 break;
-            case APROXIMACIÓN_CAJA:
+            case APROXIMACIÓN:
                 vTaskResume(Manejador_Avanzar);
                 break;
             case CHOQUE_LINEA:
-                vTaskResume(Manejador_Avanzar);
-                break;
-            case BARRIDO_PALO:
-                vTaskResume(Manejador_Avanzar);
+                vTaskResume(Manejador_Choque_Linea);
                 break;
         }
     }
 }
 
-static portTASK_FUNCTION(Avanzar, pvParameters){
+static portTASK_FUNCTION(Girar, pvParameters){ //TAREA DEL BARRIDO
+    int angulo_giro = 360;
+    EventBits_t respuesta;
+
+    while (1){
+        int giro = calculo_sectores_giro(angulo_giro);
+
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
+
+        while (giro >= 0){
+            respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | caja_localizada | palo_localizado, pdTRUE, pdFALSE, 10);
+
+            if ((respuesta & sensor_linea) == sensor_linea){
+                    giro = -1;
+                    est = CHOQUE_LINEA;
+            }
+            else if ((respuesta & caja_localizada) == caja_localizada){
+                   giro = -1;
+                   est = APROXIMACIÓN;
+            }
+            else if ((respuesta & palo_localizado) == palo_localizado){
+                   giro = -1;
+                   est = APROXIMACIÓN;
+            }
+            else if ((respuesta & encoder) == encoder){
+                giro--;
+                if(giro < 0){
+                    est = APROXIMACIÓN;
+                }
+            }
+        }
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        vTaskSuspend(Manejador_Girar);
+    }
+}
+
+static portTASK_FUNCTION(Avanzar, pvParameters){ //TAREA APROXIMACIÓN
     uint32_t dato;
-    int avance = 18;
+    int avance = 20;
     EventBits_t respuesta;
 
     while (1){
         int inc_izq = calculo_sectores_recta(avance);
         int inc_der = calculo_sectores_recta(avance);
 
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_INF);
 
         while ((inc_der >= 0) && (inc_izq >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | sensor_contacto, pdTRUE, pdFALSE, 10);
@@ -143,7 +178,7 @@ static portTASK_FUNCTION(Avanzar, pvParameters){
             else if ((respuesta & sensor_contacto) == sensor_contacto){
                 inc_izq = -1;
                 inc_der = -1;
-                est = BARRIDO_PALO;
+                est = BARRIDO;
             }
             else if ((respuesta & encoder) == encoder){
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
@@ -163,46 +198,68 @@ static portTASK_FUNCTION(Avanzar, pvParameters){
                 }
             }
         }
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
 
         vTaskSuspend(Manejador_Avanzar);
    }
 }
 
-
-static portTASK_FUNCTION(Girar, pvParameters){
-    int giro = 0;
+static portTASK_FUNCTION(Choque_Linea, pvParameters){
+    uint32_t dato;
     EventBits_t respuesta;
+    int avance = 5;
+    int angulo_giro = 90;
 
     while (1){
-        giro = calculo_sectores_giro(360);
+        int inc_izq = calculo_sectores_recta(avance);
+        int inc_der = calculo_sectores_recta(avance);
+        int giro = calculo_sectores_giro(angulo_giro);
+        while ((inc_der >= 0) && (inc_izq >= 0) && (giro >= 0)){
+            respuesta = xEventGroupWaitBits(FlagsEventos, encoder, pdTRUE, pdFALSE, portMAX_DELAY);
 
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
+            if ((respuesta & encoder) == encoder){ /*Recibe información del choque y cambia de trayectoria*/
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_INF);
 
-        while (giro >= 0){
-            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
+                xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
-            respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | caja_localizada, pdTRUE, pdFALSE, 10);
-
-            if ((respuesta & sensor_linea) == sensor_linea){
-                    giro = -1;
-                    est = CHOQUE_LINEA;
-            }
-            else if ((respuesta & caja_localizada) == caja_localizada){
-                   giro = -1;
-                   est = APROXIMACIÓN_CAJA;
-            }
-            else if ((respuesta & encoder) == encoder){
-                giro--;
-                if(giro < 0){
-                    est = APROXIMACIÓN_CAJA;
+                if (dato == 68){
+                    inc_izq--;
+                    inc_der--;
+                }
+                else if (dato == 4){
+                    inc_izq--;
+                }
+                else if (dato == 64){
+                    inc_der--;
+                }
+                if((inc_izq < 0) && (inc_der < 0)){
+                    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+                    giro--;
+                    if(giro < 0){
+                        est = BARRIDO;
+                    }
                 }
             }
         }
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        vTaskSuspend(Manejador_Choque_Linea);
+    }
+}
 
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
-        vTaskSuspend(Manejador_Girar);
+static portTASK_FUNCTION(Sensado_Distancia, pvParameters){
+    uint32_t dato;
+    int indice_mediano, indice_largo;
+
+    while (1){
+        xQueueReceive(cola_adc, (void *)&dato, portMAX_DELAY);
+
+        indice_mediano = busqueda_distancia(TMuestras_SM, dato, 0, TAMAN);
+        indice_largo = busqueda_distancia(TMuestras_SL, dato, 0, TAMA);
+
+        if(TDistancias_SM[indice_mediano] >= 10 && TDistancias_SM[indice_mediano] <= 22) xEventGroupSetBits(FlagsEventos, caja_localizada);
+        else if(TDistancias_SL[indice_largo] >= 40 && TDistancias_SL[indice_largo] <= 72) xEventGroupSetBits(FlagsEventos, palo_localizado);
     }
 }
 
@@ -211,19 +268,16 @@ static portTASK_FUNCTION(Girar, pvParameters){
 void ManejadorBotones(void){
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
-    int32_t i32Status = GPIOIntStatus(GPIO_PORTF_BASE,ALL_BUTTONS);
+    int32_t i32Status = GPIOIntStatus(GPIO_PORTF_BASE, ALL_BUTTONS);
 
     if((i32Status & LEFT_BUTTON) == LEFT_BUTTON){ //Boton izquierdo: suspende la tarea
         vTaskSuspend(Manejador_Maquina_Estados);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
     }
     if((i32Status & RIGHT_BUTTON) == RIGHT_BUTTON){ //Boton derecho: da comienzo a la tarea
         vTaskResume(Manejador_Maquina_Estados);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
     }
-    GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS); //limpiamos flags
+
+    GPIOIntClear(GPIO_PORTF_BASE, ALL_BUTTONS); //limpiamos flags
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
@@ -267,7 +321,6 @@ void configADC0_ISR(void){                                                      
     dato_final = dato[0];
 
     xQueueSendFromISR(cola_adc, &dato_final, &higherPriorityTaskWoken); //Guardamos en la cola
-    //xEventGroupSetBitsFromISR(FlagsEventos, caja_localizada, &higherPriorityTaskWoken);
 
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
@@ -285,7 +338,6 @@ void configADC1_ISR(void){                                                      
     dato_final = dato[1];
 
     xQueueSendFromISR(cola_adc, &dato_final, &higherPriorityTaskWoken); //Guardamos en la cola
-    //xEventGroupSetBitsFromISR(FlagsEventos, palo_localizado, &higherPriorityTaskWoken);
 
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
@@ -325,41 +377,41 @@ int calculo_sectores_giro(int grados){
     return num_sectores;
 }
 
-void avanzar(int inc_der, int inc_izq){
-    uint32_t dato;
+//void avanzar(int inc_der, int inc_izq){
+//    uint32_t dato;
+//
+//    while ((inc_der >= 0) && (inc_izq >= 0)){
+//        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS);
+//        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS);
+//
+//        xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
+//
+//        if (dato == 68){
+//           inc_izq--;
+//           inc_der--;
+//        }
+//        else if (dato == 4) inc_izq--;
+//        else if (dato == 64) inc_der--;
+//    }
+//    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+//    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+//}
 
-    while ((inc_der >= 0) && (inc_izq >= 0)){
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, COUNT_1MS_DER);
-
-        xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-
-        if (dato == 68){
-           inc_izq--;
-           inc_der--;
-        }
-        else if (dato == 4) inc_izq--;
-        else if (dato == 64) inc_der--;
-    }
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
-}
-
-void girar(int giro){
-    uint32_t dato;
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_DER);
-
-    while (giro >= 0){
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS_IZQ);
-
-        xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-
-        if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)) giro = -1;
-        else if (dato == 4) giro--;
-    }
-
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_IZQ);
-}
+//void girar(int giro){
+//    uint32_t dato;
+//    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+//
+//    while (giro >= 0){
+//        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, COUNT_2MS);
+//
+//        xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
+//
+//        if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)) giro = -1;
+//        else if (dato == 4) giro--;
+//    }
+//
+//    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+//}
 
 int main(void){
     //Elegir reloj adecuado para los valores de ciclos sean de tamaño soportable
@@ -391,9 +443,9 @@ int main(void){
     PWMGenConfigure(PWM1_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN);   // Módulo PWM contara hacia abajo
     PWMGenPeriodSet(PWM1_BASE, PWM_GEN_3, PERIOD_PWM);    // Carga la cuenta que establece la frecuencia de la señal PWM
 
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT_IZQ);  // Establece el periodo (en este caso, comienza parado)
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);  // Establece el periodo (en este caso, comienza parado)
     PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, true); // Habilita la salida de la señal
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT_DER);  // Establece el periodo (en este caso, comienza parado)
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);  // Establece el periodo (en este caso, comienza parado)
     PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, true); // Habilita la salida de la señal
     PWMGenEnable(PWM1_BASE, PWM_GEN_3); //Habilita/pone en marcha el generador PWM
 
@@ -454,41 +506,24 @@ int main(void){
     TimerControlTrigger(TIMER2_BASE, TIMER_A, true); //Dispara las interrupciones en los ADCs
 
     /**************************CREACIÓN DE TAREAS Y MECANISMOS FreeRTOS***************************/
-    if((xTaskCreate(Maquina_Estados, (portCHAR *)"Maquina_Estados", Maquina_Estados_STACK, NULL, Maquina_Estados_PRIORITY, &Manejador_Maquina_Estados) != pdTRUE)){
-        while(1);
-    }
+    if((xTaskCreate(Maquina_Estados, (portCHAR *)"Maquina_Estados", Maquina_Estados_STACK, NULL, Maquina_Estados_PRIORITY, &Manejador_Maquina_Estados) != pdTRUE)) while(1);
 
-    if((xTaskCreate(Avanzar, (portCHAR *)"Avanzar", Avanzar_STACK, NULL, Avanzar_PRIORITY, &Manejador_Avanzar) != pdTRUE)){
-        while(1);
-    }
+    if((xTaskCreate(Avanzar, (portCHAR *)"Avanzar", Avanzar_STACK, NULL, Avanzar_PRIORITY, &Manejador_Avanzar) != pdTRUE)) while(1);
 
-    if((xTaskCreate(Girar, (portCHAR *)"Girar", Girar_STACK, NULL, Girar_PRIORITY, &Manejador_Girar) != pdTRUE)){
-        while(1);
-    }
+    if((xTaskCreate(Girar, (portCHAR *)"Girar", Girar_STACK, NULL, Girar_PRIORITY, &Manejador_Girar) != pdTRUE)) while(1);
 
+    if((xTaskCreate(Choque_Linea, (portCHAR *)"Choque_Linea", Choque_Linea_STACK, NULL, Choque_Linea_PRIORITY, &Manejador_Choque_Linea) != pdTRUE)) while(1);
 
-//    if((xTaskCreate(Sensado_Distancia, (portCHAR *)"Sensado_Distancia", Sensado_Distancia_STACK,NULL, Sensado_Distancia_PRIORITY, &Manejador_Sensado_Distancia) != pdTRUE))
-//    {
-//        while(1);
-//    }
-//
-
-//    vTaskSuspend(Manejador_Girar);
+    if((xTaskCreate(Sensado_Distancia, (portCHAR *)"Sensado_Distancia", Sensado_Distancia_STACK, NULL, Sensado_Distancia_PRIORITY, &Manejador_Sensado_Distancia) != pdTRUE)) while(1);
 
     FlagsEventos = xEventGroupCreate();
-    if(FlagsEventos == NULL){
-        while(1);
-    }
+    if(FlagsEventos == NULL) while(1);
 
     cola_adc = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola de ADC0
-    if (cola_adc == NULL){
-        while (1);
-    }
+    if (cola_adc == NULL) while (1);
 
     cola_encoder = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola del encoder
-    if (cola_encoder == NULL){
-        while (1);
-    }
+    if (cola_encoder == NULL) while (1);
 
     //SysCtlDelay(5000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 5 segundos antes de que empiece el programa
 
@@ -500,7 +535,6 @@ int main(void){
 #ifdef DEBUG
 void __error__(char *nombrefich, uint32_t linea){
     while(1); //Si la ejecucion esta aqui dentro, es que el RTOS o alguna de las bibliotecas de perifericos han comprobado que hay un error
-              //Mira el arbol de llamadas en el depurador y los valores de nombrefich y linea para encontrar posibles pistas.
 }
 #endif
 
