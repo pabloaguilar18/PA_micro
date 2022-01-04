@@ -215,13 +215,14 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
         int inc_izq = calculo_sectores_recta(avance);
         int inc_der = calculo_sectores_recta(avance);
         int giro = calculo_sectores_giro(angulo_giro);
+
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_INF);
+
         while ((inc_der >= 0) && (inc_izq >= 0) && (giro >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder, pdTRUE, pdFALSE, portMAX_DELAY);
 
             if ((respuesta & encoder) == encoder){ /*Recibe información del choque y cambia de trayectoria*/
-                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
-                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_INF);
-
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
                 if (dato == 68){
