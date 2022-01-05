@@ -150,36 +150,52 @@ static portTASK_FUNCTION(Maquina_Estados, pvParameters){
 static portTASK_FUNCTION(Girar, pvParameters){ //TAREA DEL BARRIDO
     int angulo_giro = 360;
     EventBits_t respuesta;
+    uint32_t dato;
 
     while (1){
-        int giro = (calculo_sectores_giro(angulo_giro))/2;
+        int giro_izq = (calculo_sectores_giro(angulo_giro));
+        int giro_der = (calculo_sectores_giro(angulo_giro));
 
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
 
-        while (giro >= 0){
-            respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | caja_localizada | palo_localizado, pdTRUE, pdFALSE, 10);
+        while ((giro_der >= 0) || (giro_izq >= 0)){
+            respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | caja_localizada | palo_localizado, pdTRUE, pdFALSE, portMAX_DELAY);
 
             if ((respuesta & sensor_linea) == sensor_linea){
-                    giro = -1;
-                    est = CHOQUE_LINEA;
+                giro_izq = -1;
+                giro_der = -1;
+                est = CHOQUE_LINEA;
             }
             else if ((respuesta & caja_localizada) == caja_localizada){
-                   giro = -1;
-                   est = APROXIMACIÓN_CAJA;
+                giro_izq = -1;
+                giro_der = -1;
+                est = APROXIMACIÓN_CAJA;
             }
             else if ((respuesta & palo_localizado) == palo_localizado){
-                   giro = -1;
-                   est = APROXIMACIÓN_PALO;
+                giro_izq = -1;
+                giro_der = -1;
+                est = APROXIMACIÓN_PALO;
             }
             else if ((respuesta & encoder) == encoder){
-                giro--;
-                if(giro < 0){
+                xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
+
+                if (dato == 68){
+                    giro_izq--;
+                    giro_der--;
+                }
+                else if (dato == 4){
+                    giro_izq--;
+                }
+                else if (dato == 64){
+                    giro_der--;
+                }
+                if((giro_izq < 0) && (giro_der < 0)){
                     est = APROXIMACIÓN_CAJA;
                 }
             }
         }
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
 
         vTaskSuspend(Manejador_Girar);
     }
@@ -199,7 +215,7 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //TAREA APROXIMACIÓN
         PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_INF);
 
         while ((inc_der >= 0) || (inc_izq >= 0)){
-            respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | sensor_contacto, pdTRUE, pdFALSE, 10);
+            respuesta = xEventGroupWaitBits(FlagsEventos, sensor_linea | encoder | sensor_contacto, pdTRUE, pdFALSE, portMAX_DELAY);
 
             if (((respuesta & sensor_linea) == sensor_linea) && (est == APROXIMACIÓN_CAJA)){
                 inc_izq = -1;
@@ -233,8 +249,8 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //TAREA APROXIMACIÓN
                 }
             }
         }
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+//        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+//        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
 
         vTaskSuspend(Manejador_Avanzar);
    }
@@ -285,8 +301,9 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
                 est = RECHOQUE;
             }
         }
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
-        vTaskSuspend(Manejador_Choque_Linea);
+        //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        //vTaskSuspend(Manejador_Choque_Linea);
+        vTaskSuspend(NULL);
     }
 }
 
@@ -316,10 +333,16 @@ void ManejadorBotones(void){
     int32_t i32Status = GPIOIntStatus(GPIO_PORTF_BASE, ALL_BUTTONS);
 
     if((i32Status & LEFT_BUTTON) == LEFT_BUTTON){ //Boton izquierdo: suspende la tarea
-        vTaskSuspend(Manejador_Maquina_Estados);
+//        vTaskSuspend(Manejador_Choque_Linea);
+//        vTaskSuspend(Manejador_Avanzar);
+//        vxTaskSuspend(Manejador_Girar);
+//        vTaskSuspend(Manejador_Maquina_Estados);
+
+        vTaskSuspendAll();
     }
     if((i32Status & RIGHT_BUTTON) == RIGHT_BUTTON){ //Boton derecho: da comienzo a la tarea
-        vTaskResume(Manejador_Maquina_Estados);
+        xTaskResumeFromISR(Manejador_Maquina_Estados);
+        //vTaskResume(Manejador_Maquina_Estados);
     }
 
     GPIOIntClear(GPIO_PORTF_BASE, ALL_BUTTONS); //limpiamos flags
@@ -415,7 +438,7 @@ int calculo_sectores_giro(int grados){
     volatile double rad = 0;
     volatile double distancia_recorrida = 0;
 
-    rad = (grados * 2 * M_PI) / 360;
+    rad = (grados * 2 * M_PI) / ( 360 * 2);
     distancia_recorrida = rad * distancia_ruedas;
     num_sectores = distancia_recorrida / 0.977;
 
