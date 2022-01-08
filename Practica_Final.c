@@ -33,8 +33,7 @@
 #include "event_groups.h"
 #include "drivers/rgb.h"
 
-//Todas las tareas tienen la misma prioridad y tamaño de pila
-#define Avanzar_STACK (256)
+#define Avanzar_STACK (256) //Todas las tareas tienen la misma prioridad y tamaño de pila
 #define Avanzar_PRIORITY (tskIDLE_PRIORITY + 1)
 #define Girar_STACK (256)
 #define Girar_PRIORITY (tskIDLE_PRIORITY + 1)
@@ -70,19 +69,11 @@ static TaskHandle_t Manejador_Avanzar;
 static TaskHandle_t Manejador_Girar;
 static TaskHandle_t Manejador_Choque_Linea;
 static TaskHandle_t Manejador_Sensado_Distancia;
-
-/*Constantes globales*/
-#define distancia_ruedas 8.5
-uint32_t TMuestras_SM[]   = {598, 623, 697, 770, 840, 990, 1107, 1255, 1454, 1817, 2302};
-uint32_t TDistancias_SM[] = { 26,  24,  22,  20,  18,  16,   14,   12,   10,    8,    6};
-uint32_t TMuestras_SL[]   = {452, 480, 500, 528, 550, 575, 602, 624, 648, 673, 698, 720, 744, 794, 822, 872, 923, 970, 1000, 1063, 1114};
-uint32_t TDistancias_SL[] = { 80,  76,  72,  68,  64,  60,  58,  56,  54,  52,  50,  48,  46,  44,  42,  40,  38,  36,   34,   32,   30};
-uint32_t TAMAN = 11;
-uint32_t TAMA = 21;
-int giro_izq = 0; //Las ponemos como variables globales porque necesito editarlas en varias tareas
+int giro_izq = 0; //Las ponemos como constantes globales porque necesito editarlas en varias tareas
 int giro_der = 0;
 int inc_izq = 0;
 int inc_der = 0;
+int num_lineas = 0; //Variable para saber cuántas líneas he pasado siempre y cuando esté yendo en dirección al palo y poder seguir avanzando hasta depositar la caja
 
 typedef enum{
     BARRIDO_CAJA,
@@ -98,8 +89,6 @@ Estado est = BARRIDO_CAJA; //Empezamos al comenzar en el estado de BARRIDO_CAJA
 /*Cabeceras de las funciones*/
 int calculo_sectores_recta(int distancia);
 int calculo_sectores_giro(int grados);
-void avanzar(int inc_der, int inc_izq);
-void girar(int giro);
 int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax);
 
 /**********************TAREAS***********************/
@@ -108,46 +97,38 @@ static portTASK_FUNCTION(Girar, pvParameters){ //Tarea del barrido de la caja y 
     EventBits_t respuesta;
     uint32_t dato;
 
-    while (1){
-        IntDisable(INT_GPIOB); //Deshabilito el pulsador, ya que no lo necesito al comenzar a girar
-        ADCIntDisable(ADC0_BASE, 2); //Deshabilito el ADC del sensor de larga distancia, pues no voy a buscar el palo todavía
-        ADCIntEnable(ADC0_BASE, 1); //Habilito el ADC del sensor de media distancia, pues lo voy a usar para buscar las cajas
-
+    while(1){
         giro_izq = (calculo_sectores_giro(angulo_giro)); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
         giro_der = (calculo_sectores_giro(angulo_giro));
 
-        if(est == BARRIDO_CAJA){ //Pongo las ruedas a andar sólo si es la primera vez que se inicia la tarea
-            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
-            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
-        }
-
-        while ((giro_der >= 0) || (giro_izq >= 0)){
+        while((giro_der >= 0) || (giro_izq >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_giro | caja_localizada | palo_localizado, pdTRUE, pdFALSE, portMAX_DELAY);
 
-            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP);
+            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Pongo las ruedas a girar de nuevo, por si no lo estaban
             PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
 
-            if ((respuesta & caja_localizada) == caja_localizada){ //Si localizo una caja, cambio de estado y paro de girar, habilito el sensor de contacto
+            if((respuesta & caja_localizada) == caja_localizada){ //Si localizo una caja, cambio de estado y paro de girar, habilito el sensor de contacto
                 giro_izq = -1;
                 giro_der = -1;
+                ADCIntDisable(ADC0_BASE, 1);
                 IntEnable(INT_GPIOB);
                 est = APROXIMACIÓN_CAJA;
             }
-            else if ((respuesta & palo_localizado) == palo_localizado){ //Si localizo el palo, cambio de estado y paro de girar y habilito el ADC de larga distancia
+            else if((respuesta & palo_localizado) == palo_localizado){ //Si localizo el palo, cambio de estado y paro de girar y habilito el ADC de larga distancia
                 giro_izq = -1;
                 giro_der = -1;
                 ADCIntDisable(ADC0_BASE, 2);
                 est = APROXIMACIÓN_PALO;
             }
-            else if ((respuesta & encoder_giro) == encoder_giro){ //Si estoy en los estados de barrido el encoder será este y girarán las ruedas hasta que se complete el giro
+            else if((respuesta & encoder_giro) == encoder_giro){ //Si estoy en los estados de barrido, el encoder será este y girarán las ruedas hasta que se complete el giro
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
                 if (dato == 68){
                     giro_izq--;
                     giro_der--;
                 }
-                else if (dato == 4) giro_izq--;
-                else if (dato == 64) giro_der--;
+                else if(dato == 4) giro_izq--;
+                else if(dato == 64) giro_der--;
                 if((giro_izq < 0) && (giro_der < 0)){ //Si llego al final del giro y no encuentro nada, avanzo un poco para volver a buscar posteriormente
                     ADCIntDisable(ADC0_BASE, 1);
                     est = APROXIMACIÓN_CAJA;
@@ -162,34 +143,47 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //Tarea de aproximación a cajas
     int avance = 20; //Avanzo 20 cm en línea recta
     EventBits_t respuesta;
 
-    while (1){
+    while(1){
         inc_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
         inc_der = calculo_sectores_recta(avance);
 
-        while ((inc_der >= 0) || (inc_izq >= 0)){
+        while((inc_der >= 0) || (inc_izq >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_avance | sensor_contacto, pdTRUE, pdFALSE, portMAX_DELAY);
 
             PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP); //Si me llega un evento pongo las ruedas a girar hacia el mismo lado
             PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_INF);
 
-            if ((respuesta & sensor_contacto) == sensor_contacto){ //Si la caja toca el sensor de contacto significa que está dentro y debe buscar el palo
+            if((respuesta & sensor_contacto) == sensor_contacto){ //Si la caja toca el sensor de contacto significa que está dentro y debe buscar el palo
                 inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
                 inc_der = -1;
                 IntDisable(INT_GPIOB);
                 ADCIntEnable(ADC0_BASE, 2);
                 est = BARRIDO_PALO;
             }
-            else if ((respuesta & encoder_avance) == encoder_avance){ //Si estoy en los estados de aproximación el encoder será este y girarán las ruedas
+            else if((respuesta & encoder_avance) == encoder_avance){ //Si estoy en los estados de aproximación el encoder será este y girarán las ruedas
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-
-                if (dato == 68){
+                if(num_lineas == 3){
+                    inc_izq = 5; //Si acabo de pasar la línea, vaya por la cuenta que vaya, avanzo 5 cm más para depositar la caja en la zona negra
+                    inc_der = 5;
+                }
+                if(dato == 68){
                     inc_izq--;
                     inc_der--;
                 }
-                else if (dato == 4) inc_izq--;
-                else if (dato == 64) inc_der--;
-                if((inc_izq < 0) && (inc_der < 0)){ //Si llego al final del avance y no encuentro la caja, vuelvo al estado de barrido caja para volver a localizarla
+                else if(dato == 4) inc_izq--;
+                else if(dato == 64) inc_der--;
+                if((inc_izq < 0) && (inc_der < 0) && (est == APROXIMACIÓN_PALO) && (num_lineas < 3)){
+                    inc_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
+                    inc_der = calculo_sectores_recta(avance);
+                }
+                else if((inc_izq < 0) && (inc_der < 0) && (est == APROXIMACIÓN_PALO) && (num_lineas == 3)){
+                    est = CAJA_COLOCADA; //Si llego a la 3º línea, dejo la caja en su sitio y ya toca retroceder)
+                    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Hago que las ruedas vayan hacia el sentido contrario
+                    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_INF);
+                }
+                else if((inc_izq < 0) && (inc_der < 0) && (est != APROXIMACIÓN_PALO)){ //Si llego al final del avance y no encuentro la caja, vuelvo al estado de barrido caja para volver a localizarla
                     ADCIntEnable(ADC0_BASE, 1);
+                    IntDisable(INT_GPIOB);
                     est = BARRIDO_CAJA;
                 }
             }
@@ -201,19 +195,19 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
     uint32_t dato;
     EventBits_t respuesta;
     int avance = 5; //Queremos retroceder 5 cm
+    int avance_caja_depositada = 15;
     int angulo_giro = 90; //Queremos girar 90º para evitar la línea de nuevo
-    int num_lineas = 0; //Variable para saber cuántas líneas he pasado siempre y cuando esté yendo en dirección al palo y poder seguir avanzando hasta depositar la caja
 
-    while (1){
+    while(1){
         int inc_choque_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
         int inc_choque_der = calculo_sectores_recta(avance);
         int giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
         int giro_choque_der = calculo_sectores_giro(angulo_giro);
 
-        while ((inc_choque_der >= 0) || (inc_choque_izq >= 0) || (giro_choque_izq >= 0) || (giro_choque_der >= 0)){
+        while((inc_choque_der >= 0) || (inc_choque_izq >= 0) || (giro_choque_izq >= 0) || (giro_choque_der >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_choque | sensor_linea, pdTRUE, pdFALSE, portMAX_DELAY);
 
-            if (((respuesta & sensor_linea) == sensor_linea) && (est != APROXIMACIÓN_PALO)){ //Si el estado es distinto al de aproximación al palo es que me voy a salir
+            if(((respuesta & sensor_linea) == sensor_linea) && (est != APROXIMACIÓN_PALO)){ //Si el estado es distinto al de aproximación al palo es que me voy a salir
                 giro_der = -1;                                                               //Por lo que paro las ruedas de otras tareas y retrocedo
                 giro_izq = -1;
                 inc_der = -1;
@@ -225,31 +219,40 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
                 giro_choque_izq = calculo_sectores_giro(angulo_giro);
                 giro_choque_der = calculo_sectores_giro(angulo_giro);
             }
-            else if (((respuesta & sensor_linea) == sensor_linea) && (est == APROXIMACIÓN_PALO)){ //Si recibo sensor de línea y estoy aproximandome al palo
+            else if(((respuesta & sensor_linea) == sensor_linea) && (est == APROXIMACIÓN_PALO)){ //Si recibo sensor de línea y estoy aproximandome al palo
                 num_lineas++;                                                                     //Aumento la variable para seguir avanzando hasta él
-                if(num_lineas == 3) est = CAJA_COLOCADA;                                          //Si llego a la 3º línea, dejo la caja en su sitio y ya toca retroceder
             }
-            else if ((respuesta & encoder_choque) == encoder_choque){ /*Recibe información del choque y cambia de trayectoria*/
+            else if((respuesta & encoder_choque) == encoder_choque){ /*Recibe información del choque y cambia de trayectoria*/
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
+                if(num_lineas == 3){ //Si entro aquí significa que acabo de dejar una caja en la zona negra
+                    inc_choque_izq = calculo_sectores_recta(avance_caja_depositada); //Recalculo las funciones para retroceder 15 cm
+                    inc_choque_der = calculo_sectores_recta(avance_caja_depositada);
+                    num_lineas = 0;
+                }
                 if((inc_choque_izq > 0) && (inc_choque_der > 0)){ //Aquí compruebo que tengo que seguir retrocediendo
-                    if (dato == 68){
+                    if(dato == 68){
                         inc_choque_izq--;
                         inc_choque_der--;
                     }
-                    else if (dato == 4) inc_choque_izq--;
-                    else if (dato == 64) inc_choque_der--;
+                    else if(dato == 4) inc_choque_izq--;
+                    else if(dato == 64) inc_choque_der--;
+                    if((inc_choque_izq < 0) && (inc_choque_der < 0)){
+                        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Cambio las ruedas a girar
+                        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
+                    }
                 }
                 else if((inc_choque_izq < 0) && (inc_choque_der < 0)){ //Si ya he retrocedido lo suficiente, tengo que ponerme a girar
-                    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Cambio las ruedas a girar
-                    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
-                    if (dato == 68){
+                    if(dato == 68){
                         giro_choque_izq--;
                         giro_choque_der--;
                     }
-                    else if (dato == 4) giro_choque_izq--;
-                    else if (dato == 64) giro_choque_der--;
-                    if((giro_choque_izq < 0) && (giro_choque_der < 0)) est = BARRIDO_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
+                    else if(dato == 4) giro_choque_izq--;
+                    else if(dato == 64) giro_choque_der--;
+                    if((giro_choque_izq < 0) && (giro_choque_der < 0)){
+                        ADCIntEnable(ADC0_BASE, 1);
+                        est = BARRIDO_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
+                    }
                 }
             }
         }
@@ -259,8 +262,14 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
 static portTASK_FUNCTION(Sensado_Distancia, pvParameters){
     uint32_t dato;
     int indice_mediano, indice_largo;
+    uint32_t TAMAN = 11;
+    uint32_t TAMA = 21;
+    uint32_t TMuestras_SM[]   = {598, 623, 697, 770, 840, 990, 1107, 1255, 1454, 1817, 2302};
+    uint32_t TDistancias_SM[] = { 26,  24,  22,  20,  18,  16,   14,   12,   10,    8,    6};
+    uint32_t TMuestras_SL[]   = {452, 480, 500, 528, 550, 575, 602, 624, 648, 673, 698, 720, 744, 794, 822, 872, 923, 970, 1000, 1063, 1114};
+    uint32_t TDistancias_SL[] = { 80,  76,  72,  68,  64,  60,  58,  56,  54,  52,  50,  48,  46,  44,  42,  40,  38,  36,   34,   32,   30};
 
-    while (1){
+    while(1){
         xQueueReceive(cola_adc, (void *)&dato, portMAX_DELAY); //Espero al dato, da igual de qué ADC venga (se habilitan y deshabilitan arriba)
 
         if(est == BARRIDO_CAJA){ //Si estoy barriendo cajas, comparo con los de media distancia y envío tal evento
@@ -304,23 +313,19 @@ void Encoder(void){
 
     dato = GPIOIntStatus(GPIO_PORTD_BASE, true); //Veo de qué encoder me llega la interrupción
 
-    if (((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)){ //Si son los encoders de línea mando tal flag
-        est = CHOQUE_LINEA;
+    if(((dato & GPIO_PIN_1) == GPIO_PIN_1) || ((dato & GPIO_PIN_7) == GPIO_PIN_7)){ //Si son los encoders de línea mando tal flag
+        if(est != APROXIMACIÓN_PALO){
+            est = CHOQUE_LINEA;
+        }
         xEventGroupSetBitsFromISR(FlagsEventos, sensor_linea, &higherPriorityTaskWoken);
     }
 
-    if (((dato & GPIO_PIN_2) == GPIO_PIN_2) || ((dato & GPIO_PIN_6) == GPIO_PIN_6)){ //Si son los encoders de las ruedas, miro en qué estado estoy y envío tal flag
+    if(((dato & GPIO_PIN_2) == GPIO_PIN_2) || ((dato & GPIO_PIN_6) == GPIO_PIN_6)){ //Si son los encoders de las ruedas, miro en qué estado estoy y envío tal flag
           xQueueSendFromISR(cola_encoder, &dato, &higherPriorityTaskWoken); //Guardamos en la cola
-          if((est == BARRIDO_CAJA) || (est == BARRIDO_PALO)){
-              xEventGroupSetBitsFromISR(FlagsEventos, encoder_giro, &higherPriorityTaskWoken);
-          }
-          else if((est == APROXIMACIÓN_CAJA) || (est == APROXIMACIÓN_PALO)){
-              xEventGroupSetBitsFromISR(FlagsEventos, encoder_avance, &higherPriorityTaskWoken);
-          }
-          else if((est == CHOQUE_LINEA) || (est == CAJA_COLOCADA)){
-              xEventGroupSetBitsFromISR(FlagsEventos, encoder_choque, &higherPriorityTaskWoken);
-          }
 
+          if((est == BARRIDO_CAJA) || (est == BARRIDO_PALO)) xEventGroupSetBitsFromISR(FlagsEventos, encoder_giro, &higherPriorityTaskWoken);
+          else if((est == APROXIMACIÓN_CAJA) || (est == APROXIMACIÓN_PALO)) xEventGroupSetBitsFromISR(FlagsEventos, encoder_avance, &higherPriorityTaskWoken);
+          else if((est == CHOQUE_LINEA) || (est == CAJA_COLOCADA)) xEventGroupSetBitsFromISR(FlagsEventos, encoder_choque, &higherPriorityTaskWoken);
     }
 
     GPIOIntClear(GPIO_PORTD_BASE, GPIO_INT_PIN_1 | GPIO_INT_PIN_2 | GPIO_INT_PIN_6 | GPIO_INT_PIN_7);
@@ -365,9 +370,9 @@ void configADC1_ISR(void){                                                      
 int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax){ //Busco en qué posición estoy del array según el dato insertado en la función
     int imid;
 
-    while (imin < imax){
+    while(imin < imax){
        imid = (imin + imax) >> 1;
-       if (A[imid] < key) imin = imid + 1;
+       if(A[imid] < key) imin = imid + 1;
        else imax = imid;
     }
     return imax;    //Al final imax = imin y en dicha posicion hay un numero mayor o igual que el buscado
@@ -388,6 +393,7 @@ int calculo_sectores_giro(int grados){ //Calculo el número de sectores que neces
     volatile double num_sectores = 0;
     volatile double rad = 0;
     volatile double distancia_recorrida = 0;
+    volatile double distancia_ruedas = 8.5;
 
     rad = (grados * 2 * M_PI) / ( 360 * 2); //Dividimos entre 2 porque giramos con las ruedas a la vez al girar
     distancia_recorrida = rad * distancia_ruedas;
@@ -474,8 +480,6 @@ int main(void){
     //Habilita las interrupciones
     ADCIntClear(ADC0_BASE, 1);
     ADCIntClear(ADC0_BASE, 2);
-    //ADCIntEnable(ADC0_BASE, 1);
-    //ADCIntEnable(ADC0_BASE, 2);
     IntPrioritySet(INT_ADC0SS1, configMAX_SYSCALL_INTERRUPT_PRIORITY);
     IntPrioritySet(INT_ADC0SS2, configMAX_SYSCALL_INTERRUPT_PRIORITY);
     IntEnable(INT_ADC0SS1);
@@ -501,12 +505,19 @@ int main(void){
     if(FlagsEventos == NULL) while(1);
 
     cola_adc = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola de ADC0
-    if (cola_adc == NULL) while (1);
+    if (cola_adc == NULL) while(1);
 
     cola_encoder = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola del encoder
-    if (cola_encoder == NULL) while (1);
+    if (cola_encoder == NULL) while(1);
 
-    SysCtlDelay(3000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 5 segundos antes de que empiece el programa
+    SysCtlDelay(3000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 3 segundos antes de que empiece el programa
+
+    IntDisable(INT_GPIOB); //Deshabilito el pulsador, ya que no lo necesito al comenzar
+    ADCIntDisable(ADC0_BASE, 2); //Deshabilito el ADC del sensor de larga distancia, pues no voy a buscar el palo todavía
+    ADCIntEnable(ADC0_BASE, 1); //Habilito el ADC del sensor de media distancia, pues lo voy a usar para buscar las cajas
+
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Comienzo haciendo que las ruedas giren
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
 
 	vTaskStartScheduler();	//el RTOS habilita las interrupciones al entrar aqui, asi que no hace falta habilitarlas
 
