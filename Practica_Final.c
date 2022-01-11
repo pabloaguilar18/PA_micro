@@ -264,7 +264,6 @@ static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximaci
                 else if(dato == 64) inc_der--;
             }
         }
-
         ruedas_hacia_atras(); //PRUEBA
         est = CHOQUE_LINEA;
         ruedas_hacia_atras(); //PRUEBA
