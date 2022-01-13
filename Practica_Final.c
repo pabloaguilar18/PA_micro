@@ -39,8 +39,6 @@
 #define Girar_PRIORITY (tskIDLE_PRIORITY + 1)
 #define Choque_Linea_STACK (256)
 #define Choque_Linea_PRIORITY (tskIDLE_PRIORITY + 1)
-#define Sensado_Distancia_STACK (256)
-#define Sensado_Distancia_PRIORITY (tskIDLE_PRIORITY + 1)
 #define Aproximacion_Palo_STACK (256)
 #define Aproximacion_Palo_PRIORITY (tskIDLE_PRIORITY + 1)
 
@@ -66,22 +64,20 @@
 uint32_t g_ui32CPUUsage;
 uint32_t g_ulSystemClock;
 static EventGroupHandle_t FlagsEventos;
-static QueueHandle_t cola_adc;
 static QueueHandle_t cola_encoder;
 static TaskHandle_t Manejador_Avanzar;
 static TaskHandle_t Manejador_Girar;
 static TaskHandle_t Manejador_Choque_Linea;
-static TaskHandle_t Manejador_Sensado_Distancia;
 static TaskHandle_t Manejador_Aproximacion_Palo;
 int giro_izq = 0; //Las ponemos como constantes globales porque necesito editarlas en varias tareas
 int giro_der = 0;
 int inc_izq = 0;
 int inc_der = 0;
-int inc_choque_izq = 0;
+int inc_choque_izq = 0; //Calculo los sectores que tienen que girar las ruedas para el avance buscado
 int inc_choque_der = 0;
-int giro_choque_izq = 0;
+int giro_choque_izq = 0; //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
 int giro_choque_der = 0;
-int avance_choque_izq = 0;
+int avance_choque_izq = 0; //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
 int avance_choque_der = 0;
 int avance = 5; //Queremos retroceder 5 cm
 int avance_2 = 10;
@@ -100,9 +96,9 @@ typedef enum{
 Estado est = BARRIDO_CAJA; //Empezamos al comenzar en el estado de BARRIDO_CAJA
 
 /*Cabeceras de las funciones*/
+void calculo_variables_choque();
 int calculo_sectores_recta(int distancia);
 int calculo_sectores_giro(int grados);
-int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax);
 void ruedas_girando();
 void ruedas_hacia_delante();
 void ruedas_hacia_atras();
@@ -118,28 +114,8 @@ static portTASK_FUNCTION(Girar, pvParameters){ //Tarea del barrido de la caja y 
         giro_der = (calculo_sectores_giro(angulo_giro_girar));
 
         while((giro_der >= 0) || (giro_izq >= 0)){
-            //respuesta = xEventGroupWaitBits(FlagsEventos, encoder_giro | caja_localizada | palo_localizado, pdTRUE, pdFALSE, portMAX_DELAY);
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_giro, pdTRUE, pdFALSE, portMAX_DELAY);
 
-            //ruedas_girando(); //Pongo las ruedas a girar de nuevo, por si no lo estaban
-
-            if((respuesta & caja_localizada) == caja_localizada){ //Si localizo una caja, cambio de estado y paro de girar, habilito el sensor de contacto
-                ADCIntDisable(ADC0_BASE, 1);
-                IntEnable(INT_GPIOB);
-                ruedas_hacia_delante(); //PRUEBA
-                est = APROXIMACIÓN_CAJA;
-                ruedas_hacia_delante(); //PRUEBA
-                giro_izq = -1;
-                giro_der = -1;
-            }
-            if((respuesta & palo_localizado) == palo_localizado){ //Si localizo el palo, cambio de estado y paro de girar y habilito el ADC de larga distancia
-                ADCIntDisable(ADC0_BASE, 2);
-                ruedas_hacia_delante(); //PRUEBA
-                est = APROXIMACIÓN_PALO;
-                ruedas_hacia_delante(); //PRUEBA
-                giro_izq = -1;
-                giro_der = -1;
-            }
             if((respuesta & encoder_giro) == encoder_giro){ //Si estoy en los estados de barrido, el encoder será este y girarán las ruedas hasta que se complete el giro
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
@@ -170,21 +146,8 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //Tarea de aproximación a cajas
         inc_der = calculo_sectores_recta(avance_avanzar);
 
         while((inc_der >= 0) || (inc_izq >= 0)){
-            //respuesta = xEventGroupWaitBits(FlagsEventos, encoder_avance | sensor_contacto, pdTRUE, pdFALSE, portMAX_DELAY);
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_avance, pdTRUE, pdFALSE, portMAX_DELAY);
 
-            //ruedas_hacia_delante(); //Si me llega un evento pongo las ruedas a girar hacia el mismo lado
-
-            if((respuesta & sensor_contacto) == sensor_contacto){ //Si la caja toca el sensor de contacto significa que está dentro y debe buscar el palo
-                IntDisable(INT_GPIOB);
-                //ADCIntEnable(ADC0_BASE, 2);
-                ADCIntEnable(ADC0_BASE, 1);   ///ESTO HABRÁ QUE QUITARLO
-                ruedas_girando(); //PRUEBA
-                est = BARRIDO_PALO;
-                ruedas_girando(); //PRUEBA
-                inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
-                inc_der = -1;
-            }
             if((respuesta & encoder_avance) == encoder_avance){ //Si estoy en los estados de aproximación el encoder será este y girarán las ruedas
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
@@ -218,8 +181,6 @@ static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximaci
         while(num_lineas < 3){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_caja_depositada, pdTRUE, pdFALSE, portMAX_DELAY);
 
-            //ruedas_hacia_delante(); //Si me llega un evento pongo las ruedas a girar hacia el mismo lado
-
             if((respuesta & encoder_caja_depositada) == encoder_caja_depositada){ //Si estoy en los estados de aproximación el encoder será este y girarán las ruedas
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
@@ -238,8 +199,6 @@ static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximaci
 
         while((inc_der >= 0) || (inc_izq >= 0)){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_caja_depositada, pdTRUE, pdFALSE, portMAX_DELAY);
-
-            //ruedas_hacia_delante(); //Si me llega un evento pongo las ruedas a girar hacia el mismo lado
 
             if((respuesta & encoder_caja_depositada) == encoder_caja_depositada){ //Si estoy en los estados de aproximación el encoder será este y girarán las ruedas
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
@@ -263,8 +222,6 @@ static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximaci
         while(num_lineas > 0){
             respuesta = xEventGroupWaitBits(FlagsEventos, encoder_caja_depositada, pdTRUE, pdFALSE, portMAX_DELAY);
 
-            //ruedas_hacia_delante(); //Si me llega un evento pongo las ruedas a girar hacia el mismo lado
-
             if((respuesta & encoder_caja_depositada) == encoder_caja_depositada){ //Si estoy en los estados de aproximación el encoder será este y girarán las ruedas
                 xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
@@ -285,110 +242,52 @@ static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximaci
 static portTASK_FUNCTION(Choque_Linea, pvParameters){
     uint32_t dato;
     EventBits_t respuesta;
-//    int avance = 5; //Queremos retroceder 5 cm
-//    int avance_2 = 10;
-//    int angulo_giro = 30; //Queremos girar 90º para evitar la línea de nuevo
 
     while(1){
-        inc_choque_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
-        inc_choque_der = calculo_sectores_recta(avance);
-        giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
-        giro_choque_der = calculo_sectores_giro(angulo_giro);
-        avance_choque_izq = calculo_sectores_recta(avance_2); //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
-        avance_choque_der = calculo_sectores_recta(avance_2);
+        //respuesta = xEventGroupWaitBits(FlagsEventos, encoder_choque | sensor_linea, pdTRUE, pdFALSE, portMAX_DELAY);
+        respuesta = xEventGroupWaitBits(FlagsEventos, encoder_choque, pdTRUE, pdFALSE, portMAX_DELAY);
 
-        while((inc_choque_der >= 0) || (inc_choque_izq >= 0) || (giro_choque_izq >= 0) || (giro_choque_der >= 0) || (avance_choque_der >= 0) || (avance_choque_izq >= 0)){
-            //respuesta = xEventGroupWaitBits(FlagsEventos, encoder_choque | sensor_linea, pdTRUE, pdFALSE, portMAX_DELAY);
-            respuesta = xEventGroupWaitBits(FlagsEventos, encoder_choque, pdTRUE, pdFALSE, portMAX_DELAY);
+        if((respuesta & encoder_choque) == encoder_choque){ /*Recibe información del choque y cambia de trayectoria*/
+            xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
 
-            if((respuesta & sensor_linea) == sensor_linea){ //Si el estado es distinto al de aproximación al palo es que me voy a salir
-//                ruedas_hacia_atras(); //Hago que las ruedas vayan para atrás
-//                est = CHOQUE_LINEA;
-//                ruedas_hacia_atras(); //PRUEBA
-                inc_choque_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
-                inc_choque_der = calculo_sectores_recta(avance);
-                giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
-                giro_choque_der = calculo_sectores_giro(angulo_giro);
-                avance_choque_izq = calculo_sectores_recta(avance_2); //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
-                avance_choque_der = calculo_sectores_recta(avance_2);
+            if((inc_choque_izq >= 0) || (inc_choque_der >= 0)){ //Aquí compruebo que tengo que seguir retrocediendo
+                if(dato == 68){
+                    inc_choque_izq--;
+                    inc_choque_der--;
+                }
+                else if(dato == 4) inc_choque_izq--;
+                else if(dato == 64) inc_choque_der--;
+                if((inc_choque_izq < 0) && (inc_choque_der < 0)){
+                    ruedas_girando();
+                }
             }
-            if((respuesta & encoder_choque) == encoder_choque){ /*Recibe información del choque y cambia de trayectoria*/
-                xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
-
-                if((inc_choque_izq >= 0) || (inc_choque_der >= 0)){ //Aquí compruebo que tengo que seguir retrocediendo
-                    if(dato == 68){
-                        inc_choque_izq--;
-                        inc_choque_der--;
-                    }
-                    else if(dato == 4) inc_choque_izq--;
-                    else if(dato == 64) inc_choque_der--;
-                    if((inc_choque_izq < 0) && (inc_choque_der < 0)){
-                        ruedas_girando();
-                    }
+            else if((giro_choque_izq >= 0) || (giro_choque_der >= 0)){ //Si ya he retrocedido lo suficiente, tengo que ponerme a girar
+                if(dato == 68){
+                    giro_choque_izq--;
+                    giro_choque_der--;
                 }
-                else if((giro_choque_izq >= 0) || (giro_choque_der >= 0)){ //Si ya he retrocedido lo suficiente, tengo que ponerme a girar
-                    if(dato == 68){
-                        giro_choque_izq--;
-                        giro_choque_der--;
-                    }
-                    else if(dato == 4) giro_choque_izq--;
-                    else if(dato == 64) giro_choque_der--;
-                    if((giro_choque_izq < 0) && (giro_choque_der < 0)){
-                        ruedas_hacia_delante(); //NO SÉ BIEN QUÉ HACER AQUÍ
-                        //ruedas_hacia_atras();
-                    }
+                else if(dato == 4) giro_choque_izq--;
+                else if(dato == 64) giro_choque_der--;
+                if((giro_choque_izq < 0) && (giro_choque_der < 0)){
+                    ruedas_hacia_delante(); //NO SÉ BIEN QUÉ HACER AQUÍ
+                    //ruedas_hacia_atras();
                 }
-                else if((avance_choque_izq >= 0) || (avance_choque_der >= 0)){
-                    if(dato == 68){
-                        avance_choque_izq--;
-                        avance_choque_der--;
-                    }
-                    else if(dato == 4) avance_choque_izq--;
-                    else if(dato == 64) avance_choque_der--;
-                    if((inc_choque_izq < 0) && (inc_choque_der < 0)){
-                        ADCIntEnable(ADC0_BASE, 1);
-                        ruedas_girando(); //PRUEBA
-                        est = BARRIDO_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
-                        ruedas_girando(); //PRUEBA
-                    }
+            }
+            else if((avance_choque_izq >= 0) || (avance_choque_der >= 0)){
+                if(dato == 68){
+                    avance_choque_izq--;
+                    avance_choque_der--;
+                }
+                else if(dato == 4) avance_choque_izq--;
+                else if(dato == 64) avance_choque_der--;
+                if((inc_choque_izq < 0) && (inc_choque_der < 0)){
+                    ADCIntEnable(ADC0_BASE, 1);
+                    ruedas_girando(); //PRUEBA
+                    est = BARRIDO_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
+                    ruedas_girando(); //PRUEBA
                 }
             }
         }
-    }
-}
-
-static portTASK_FUNCTION(Sensado_Distancia, pvParameters){
-    uint32_t dato;
-    int indice_mediano, indice_largo;
-    uint32_t TAMAN = 11;
-    uint32_t TAMA = 21;
-    uint32_t TMuestras_SM[]   = {598, 623, 697, 770, 840, 990, 1107, 1255, 1454, 1817, 2302};
-    uint32_t TDistancias_SM[] = { 26,  24,  22,  20,  18,  16,   14,   12,   10,    8,    6};
-    uint32_t TMuestras_SL[]   = {452, 480, 500, 528, 550, 575, 602, 624, 648, 673, 698, 720, 744, 794, 822, 872, 923, 970, 1000, 1063, 1114};
-    uint32_t TDistancias_SL[] = { 80,  76,  72,  68,  64,  60,  58,  56,  54,  52,  50,  48,  46,  44,  42,  40,  38,  36,   34,   32,   30};
-
-    while(1){
-        xQueueReceive(cola_adc, (void *)&dato, portMAX_DELAY); //Espero al dato, da igual de qué ADC venga (se habilitan y deshabilitan arriba)
-
-        if((est == BARRIDO_CAJA) && (dato <= 1454 && dato >= 697)){
-            ADCIntDisable(ADC0_BASE, 1);
-            xEventGroupSetBits(FlagsEventos, caja_localizada);
-        }
-        else if((est == BARRIDO_PALO) && (dato <= 1454 && dato >= 697)){
-            ADCIntDisable(ADC0_BASE, 1);
-            xEventGroupSetBits(FlagsEventos, palo_localizado);
-        }
-
-//        if(est == BARRIDO_CAJA){ //Si estoy barriendo cajas, comparo con los de media distancia y envío tal evento
-//            indice_mediano = busqueda_distancia(TMuestras_SM, dato, 0, TAMAN);
-//            if(TDistancias_SM[indice_mediano] >= 10 && TDistancias_SM[indice_mediano] <= 22) xEventGroupSetBits(FlagsEventos, caja_localizada);
-//        }
-//        else if(est == BARRIDO_PALO){ //Si estoy barriendo el palo, comparo con los de larga distancia y envío tal evento
-//            indice_mediano = busqueda_distancia(TMuestras_SM, dato, 0, TAMAN);
-//            if(TDistancias_SM[indice_mediano] >= 10 && TDistancias_SM[indice_mediano] <= 22) xEventGroupSetBits(FlagsEventos, palo_localizado);  //ESTO HABRÁ QUE QUITARLO
-////            indice_largo = busqueda_distancia(TMuestras_SL, dato, 0, TAMA);
-////            if(TDistancias_SL[indice_largo] >= 40 && TDistancias_SL[indice_largo] <= 72) xEventGroupSetBits(FlagsEventos, palo_localizado);
-//        }
     }
 }
 
@@ -409,26 +308,20 @@ void Encoder(void){
             num_lineas--;
         }
         else{
-//            inc_choque_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
-//            inc_choque_der = calculo_sectores_recta(avance);
-//            giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
-//            giro_choque_der = calculo_sectores_giro(angulo_giro);
-//            avance_choque_izq = calculo_sectores_recta(avance_2); //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
-//            avance_choque_der = calculo_sectores_recta(avance_2);
             ADCIntDisable(ADC0_BASE, 1);
             giro_der = -1;
             giro_izq = -1;
             inc_der = -1;
             inc_izq = -1;
+            calculo_variables_choque();
+
             ruedas_hacia_atras(); //PRUEBA
             est = CHOQUE_LINEA;               //SE PONE A ANDAR SI LO DEJO PUESTO
             ruedas_hacia_atras(); //PRUEBA
-
-            xEventGroupSetBitsFromISR(FlagsEventos, sensor_linea, &higherPriorityTaskWoken);
         }
     }
 
-    if(((dato & GPIO_PIN_2) == GPIO_PIN_2) || ((dato & GPIO_PIN_6) == GPIO_PIN_6)){ //Si son los encoders de las ruedas, miro en qué estado estoy y envío tal flag
+    else if(((dato & GPIO_PIN_2) == GPIO_PIN_2) || ((dato & GPIO_PIN_6) == GPIO_PIN_6)){ //Si son los encoders de las ruedas, miro en qué estado estoy y envío tal flag
           xQueueSendFromISR(cola_encoder, &dato, &higherPriorityTaskWoken); //Guardamos en la cola
 
           if((est == CHOQUE_LINEA) || (est == CAJA_COLOCADA)) xEventGroupSetBitsFromISR(FlagsEventos, encoder_choque, &higherPriorityTaskWoken);
@@ -445,29 +338,31 @@ void configADC0_ISR(void){                                                      
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
     uint32_t dato[4];
-    uint32_t dato_final;
 
     ADCIntClear(ADC0_BASE, 1); //Limpiamos el flag de interrupciones
 
     ADCSequenceDataGet(ADC0_BASE, 1, (uint32_t*)dato); //Cogemos el dato guardado
 
-    dato_final = dato[0]; //Sólo cojo el primer dato de la cola de mensajes
+    if((est == BARRIDO_CAJA) && (dato[0] <= 1454 && dato[0] >= 697)){
+        ADCIntDisable(ADC0_BASE, 1);
+        IntEnable(INT_GPIOB);
+        ruedas_hacia_delante(); //PRUEBA
+        est = APROXIMACIÓN_CAJA;
+        ruedas_hacia_delante(); //PRUEBA
+        giro_izq = -1;
+        giro_der = -1;
+    }
+    else if((est == BARRIDO_PALO) && (dato[0] <= 1454 && dato[0] >= 697)){
+        ADCIntDisable(ADC0_BASE, 1); //HABRÁ QUE QUITARLO
+//        ADCIntDisable(ADC0_BASE, 2);
+        ruedas_hacia_delante(); //PRUEBA
+        est = APROXIMACIÓN_PALO;
+        ruedas_hacia_delante(); //PRUEBA
+        giro_izq = -1;
+        giro_der = -1;
+    }
 
-//    if(dato[0] <= 1454 && dato[0] >= 697){
-//        //xEventGroupSetBits(FlagsEventos, caja_localizada);
-//
-//        ADCIntDisable(ADC0_BASE, 1);
-//        IntEnable(INT_GPIOB);
-//        ruedas_hacia_delante(); //PRUEBA
-//        est = APROXIMACIÓN_CAJA;
-//        ruedas_hacia_delante(); //PRUEBA
-//        giro_izq = -1;
-//        giro_der = -1;
-//    }
-
-    ADCProcessorTrigger(ADC0_BASE, 1);
-
-    xQueueSendFromISR(cola_adc, &dato_final, &higherPriorityTaskWoken); //Enviamos el dato por la cola de mensajes
+    ADCIntClear(ADC0_BASE, 1); //Limpiamos el flag de interrupciones
 
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
@@ -476,15 +371,21 @@ void configADC1_ISR(void){                                                      
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
     uint32_t dato[4];
-    uint32_t dato_final;
 
     ADCIntClear(ADC0_BASE, 2); //Limpiamos el flag de interrupciones
 
     ADCSequenceDataGet(ADC0_BASE, 2, (uint32_t*)dato); //Cogemos el dato guardado
 
-    dato_final = dato[1]; //Sólo cojo el primer dato de la cola de mensajes
+    if(dato[0] <= 1114 && dato[0] >= 528){
+        ADCIntDisable(ADC0_BASE, 2);
+        ruedas_hacia_delante(); //PRUEBA
+        est = APROXIMACIÓN_PALO;
+        ruedas_hacia_delante(); //PRUEBA
+        giro_izq = -1;
+        giro_der = -1;
+    }
 
-    //xQueueSendFromISR(cola_adc, &dato_final, &higherPriorityTaskWoken); //Enviamos el dato por la cola de mensajes
+    ADCIntClear(ADC0_BASE, 2); //Limpiamos el flag de interrupciones
 
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
@@ -492,16 +393,16 @@ void configADC1_ISR(void){                                                      
 void SensorContacto(void){ //Informa que ya tiene dentro la caja
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
-    xEventGroupSetBitsFromISR(FlagsEventos, sensor_contacto, &higherPriorityTaskWoken); //Si se activa el sensor de contacto, mando tal flag
+    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_5);/*Limpia interrupción*/
 
-//    IntDisable(INT_GPIOB);
-//    //ADCIntEnable(ADC0_BASE, 2);
-//    ADCIntEnable(ADC0_BASE, 1);   ///ESTO HABRÁ QUE QUITARLO
-//    ruedas_girando(); //PRUEBA
-//    est = BARRIDO_PALO;
-//    ruedas_girando(); //PRUEBA
-//    inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
-//    inc_der = -1;
+    IntDisable(INT_GPIOB);
+    //ADCIntEnable(ADC0_BASE, 2);
+    ADCIntEnable(ADC0_BASE, 1);   ///ESTO HABRÁ QUE QUITARLO
+    ruedas_girando(); //PRUEBA
+    est = BARRIDO_PALO;
+    ruedas_girando(); //PRUEBA
+    inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
+    inc_der = -1;
 
     GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_5);/*Limpia interrupción*/
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
@@ -510,13 +411,14 @@ void SensorContacto(void){ //Informa que ya tiene dentro la caja
 void ManejadorBotones(void){
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
+    ADCIntDisable(ADC0_BASE, 1);
+    ADCIntDisable(ADC0_BASE, 2);
     IntDisable(INT_GPIOD);
     IntDisable(INT_GPIOB);
     vTaskDelete(Manejador_Girar); //Si pulso cualquiera de los dos botones, entonces suspendo todas las tareas, si las quiero reanudar se pulsará el botón de RESET
     vTaskDelete(Manejador_Avanzar);
     vTaskDelete(Manejador_Choque_Linea);
     vTaskDelete(Manejador_Aproximacion_Palo);
-    vTaskDelete(Manejador_Sensado_Distancia);
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
 
@@ -525,6 +427,14 @@ void ManejadorBotones(void){
 }
 
 /***************************FUNCIONES_AUXILIARES********************/
+void calculo_variables_choque(){
+    inc_choque_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
+    inc_choque_der = calculo_sectores_recta(avance);
+    giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
+    giro_choque_der = calculo_sectores_giro(angulo_giro);
+    avance_choque_izq = calculo_sectores_recta(avance_2); //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
+    avance_choque_der = calculo_sectores_recta(avance_2);
+}
 void ruedas_girando(){
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Cambio las ruedas a girar
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP);
@@ -538,17 +448,6 @@ void ruedas_hacia_delante(){
 void ruedas_hacia_atras(){
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP); //Cambio las ruedas a girar
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_INF);
-}
-
-int busqueda_distancia(uint32_t A[], uint32_t key, uint32_t imin, uint32_t imax){ //Busco en qué posición estoy del array según el dato insertado en la función
-    int imid;
-
-    while(imin < imax){
-       imid = (imin + imax) >> 1;
-       if(A[imid] < key) imin = imid + 1;
-       else imax = imid;
-    }
-    return imax;    //Al final imax = imin y en dicha posicion hay un numero mayor o igual que el buscado
 }
 
 int calculo_sectores_recta(int distancia){ //Calculo el número de sectores que necesitamos para avanzar en línea recta
@@ -613,6 +512,7 @@ int main(void){
 
     /*Habilita interrupciones del puerto B (sensor de contacto)*/
     GPIOIntEnable(GPIO_PORTB_BASE, GPIO_INT_PIN_5);
+    //GPIOIntTypeSet(GPIO_PORTB_BASE, GPIO_PIN_5, GPIO_DISCRETE_INT);
     IntEnable(INT_GPIOB);
 
     //Set each of the button GPIO pins as an input with a pull-up.
@@ -651,9 +551,6 @@ int main(void){
     ADCSequenceEnable(ADC0_BASE, 1);
     ADCSequenceEnable(ADC0_BASE, 2);
 
-    //ADCProcessorTrigger(ADC0_BASE, 1); //NOS FALTABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAN
-    //ADCProcessorTrigger(ADC0_BASE, 2);
-
     //Habilita las interrupciones
     ADCIntClear(ADC0_BASE, 1);
     ADCIntClear(ADC0_BASE, 2);
@@ -666,7 +563,7 @@ int main(void){
     SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2); //Habilita interrupciones del timer2
     TimerConfigure(TIMER2_BASE, TIMER_CFG_A_PERIODIC); //Configura el timer2A (32bits), de forma periódica
     TimerControlTrigger(TIMER2_BASE, TIMER_A, true); //Dispara las interrupciones en los ADCs
-    TimerLoadSet(TIMER2_BASE, TIMER_A, SysCtlClockGet()); //Carga valor de cuenta (1seg inicialmente), con 40*10^6 ciclos de reloj
+    TimerLoadSet(TIMER2_BASE, TIMER_A, SysCtlClockGet() * 0.1); //Carga valor de cuenta (1seg inicialmente), con 40*10^6 ciclos de reloj
     TimerEnable(TIMER2_BASE, TIMER_A); //Comienza a contar
 
     /**************************CREACIÓN DE TAREAS Y MECANISMOS FreeRTOS***************************/
@@ -678,13 +575,8 @@ int main(void){
 
     if((xTaskCreate(Aproximacion_Palo, (portCHAR *)"Aproximacion_Palo", Aproximacion_Palo_STACK, NULL, Aproximacion_Palo_PRIORITY, &Manejador_Aproximacion_Palo) != pdTRUE)) while(1);
 
-    if((xTaskCreate(Sensado_Distancia, (portCHAR *)"Sensado_Distancia", Sensado_Distancia_STACK, NULL, Sensado_Distancia_PRIORITY, &Manejador_Sensado_Distancia) != pdTRUE)) while(1);
-
     FlagsEventos = xEventGroupCreate();
     if(FlagsEventos == NULL) while(1);
-
-    cola_adc = xQueueCreate(1, sizeof(uint32_t)); //Creación de la cola de ADC0
-    if (cola_adc == NULL) while(1);
 
     cola_encoder = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola del encoder
     if (cola_encoder == NULL) while(1);
