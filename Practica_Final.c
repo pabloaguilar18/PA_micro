@@ -3,12 +3,6 @@
 // Autores: Daniel Torres Viudes y Pablo Aguilar Pérez
 //*****************************************************************************
 
-//PB5 SENSOR DE CONTACTO (WHISKER)
-//PD2 Y PD6 ENCODERS RUEDAS
-//PD3 Y PD7 ENCODERS SEGUIDORES DE LÍNEA
-//PE3 ADC0 1 (MEDIA DISTANCIA S41)
-//PE2 ADC0 2 (LARGA DISTANCIA S21)
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <math.h>
@@ -45,8 +39,8 @@
 /*Parámetros motores*/
 #define PERIOD_PWM 12500 //Periodo de 20ms
 #define STOPCOUNT 950 //Ciclos para amplitud de pulso de parada (1.52ms)
-#define VEL_MEDIA_SUP_DELANTE 980 //1025 //1100 //1250 //Velocidad media superior
-#define VEL_MEDIA_INF_DELANTE 925 //868 //787 //625 //Velocidad media inferior
+#define VEL_MEDIA_SUP_DELANTE 1100 //980 //1025 //1100 //1250 //Velocidad media superior
+#define VEL_MEDIA_INF_DELANTE 787 //925 //868 //787 //625 //Velocidad media inferior
 #define VEL_MEDIA_SUP_ATRAS 980 //1025 //1100 //Velocidad media superior
 #define VEL_MEDIA_INF_ATRAS 918 //868 //787 //Velocidad media inferior
 
@@ -80,9 +74,10 @@ int giro_choque_der = 0;
 int avance_choque_izq = 0; //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
 int avance_choque_der = 0;
 int avance = 5; //Queremos retroceder 5 cm
-int avance_2 = 10;
 int angulo_giro = 60; //Queremos girar 90º para evitar la línea de nuevo
 int num_lineas = 0; //Variable para saber cuántas líneas he pasado siempre y cuando esté yendo en dirección al palo y poder seguir avanzando hasta depositar la caja
+int comprobacion_giro = 0;
+int comprobacion_avance = 0;
 
 typedef enum{
     BARRIDO_CAJA,
@@ -110,10 +105,12 @@ static portTASK_FUNCTION(Girar, pvParameters){ //Tarea del barrido de la caja y 
     uint32_t dato;
 
     while(1){
-        giro_izq = calculo_sectores_giro(angulo_giro_girar) / 2; //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
+        giro_izq = calculo_sectores_giro(angulo_giro_girar); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
         giro_der = giro_izq;
 
         while((giro_der >= 0) || (giro_izq >= 0)){
+            ADCIntDisable(ADC0_BASE, 1);
+            TimerDisable(TIMER2_BASE, TIMER_A);
             xEventGroupWaitBits(FlagsEventos, encoder_giro, pdTRUE, pdFALSE, portMAX_DELAY);
 
             xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
@@ -124,8 +121,11 @@ static portTASK_FUNCTION(Girar, pvParameters){ //Tarea del barrido de la caja y 
             }
             else if(dato == 4) giro_izq--;
             else if(dato == 64) giro_der--;
-            if((giro_izq < 0) && (giro_der < 0)){ //Si llego al final del giro y no encuentro nada, avanzo un poco para volver a buscar posteriormente
+            if((comprobacion_giro == 0) && (giro_izq < 0) && (giro_der < 0)){ //Si llego al final del giro y no encuentro nada, avanzo un poco para volver a buscar posteriormente
+                //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+                //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
                 est = APROXIMACIÓN_CAJA;
+                comprobacion_avance = 0;
                 ruedas_hacia_delante();
                 TimerDisable(TIMER2_BASE, TIMER_A);
             }
@@ -152,9 +152,10 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //Tarea de aproximación a cajas
             }
             else if(dato == 4) inc_izq--;
             else if(dato == 64) inc_der--;
-            if((inc_izq < 0) && (inc_der < 0)){ //Si llego al final del avance y no encuentro la caja, vuelvo al estado de barrido caja para volver a localizarla
+            if((comprobacion_avance == 0) && (inc_izq < 0) && (inc_der < 0)){ //Si llego al final del avance y no encuentro la caja, vuelvo al estado de barrido caja para volver a localizarla
                 TimerEnable(TIMER2_BASE, TIMER_A);
                 IntDisable(INT_GPIOB);
+                comprobacion_giro = 0;
                 est = BARRIDO_CAJA;
                 ruedas_girando();
             }
@@ -196,6 +197,7 @@ static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximaci
 
             calcula_avance();
         }
+        calculo_variables_choque();
         est = CHOQUE_LINEA;
         ruedas_hacia_atras();
    }
@@ -229,22 +231,10 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
             else if(dato == 64) giro_choque_der--;
             if((giro_choque_izq < 0) && (giro_choque_der < 0)){
                 est = APROXIMACIÓN_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
+                comprobacion_avance = 0;
                 ruedas_hacia_delante();
             }
         }
-//        else if((avance_choque_izq >= 0) || (avance_choque_der >= 0)){
-//            if(dato == 68){
-//                avance_choque_izq--;
-//                avance_choque_der--;
-//            }
-//            else if(dato == 4) avance_choque_izq--;
-//            else if(dato == 64) avance_choque_der--;
-//            if((inc_choque_izq < 0) && (inc_choque_der < 0)){
-//                TimerEnable(TIMER2_BASE, TIMER_A);
-//                est = BARRIDO_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
-//                ruedas_girando();
-//            }
-//        }
     }
 }
 
@@ -270,6 +260,8 @@ void Encoder(void){
             giro_izq = -1;
             inc_der = -1;
             inc_izq = -1;
+            comprobacion_avance = 1;
+            comprobacion_giro = 1;
             calculo_variables_choque();
 
             est = CHOQUE_LINEA;
@@ -302,6 +294,10 @@ void configADC0_ISR(void){
         IntEnable(INT_GPIOB);
         giro_izq = -1;
         giro_der = -1;
+        comprobacion_giro = 1;
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        SysCtlDelay(1000 * (SysCtlClockGet() / 3 / 1000));
         est = APROXIMACIÓN_CAJA;
         ruedas_hacia_delante();
     }
@@ -324,6 +320,10 @@ void configADC1_ISR(void){                                                      
         TimerDisable(TIMER2_BASE, TIMER_A);
         giro_izq = -1;
         giro_der = -1;
+        comprobacion_giro = 1;
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+        SysCtlDelay(1000 * (SysCtlClockGet() / 3 / 1000));
         est = APROXIMACIÓN_PALO;
         ruedas_hacia_delante();
     }
@@ -336,16 +336,20 @@ void configADC1_ISR(void){                                                      
 void SensorContacto(void){ //Informa que ya tiene dentro la caja
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
-    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_5);/*Limpia interrupción*/
+    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_4); /*Limpia interrupción*/
 
     inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
     inc_der = -1;
+    comprobacion_avance = 1;
     IntDisable(INT_GPIOB);
-    TimerDisable(TIMER2_BASE, TIMER_A);
+    TimerEnable(TIMER2_BASE, TIMER_A);
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+    SysCtlDelay(1000 * (SysCtlClockGet() / 3 / 1000));
     est = BARRIDO_PALO;
     ruedas_girando();
 
-    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_5); /*Limpia interrupción*/
+    GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_4); /*Limpia interrupción*/
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
 
@@ -385,8 +389,6 @@ void calculo_variables_choque(){
     inc_choque_der = inc_choque_izq;
     giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas para el ángulo buscado
     giro_choque_der = giro_choque_izq;
-    avance_choque_izq = calculo_sectores_recta(avance_2); //Recalculo todas las funciones de nuevo por si vuelvo a entrar en choque mientras choco (rechoque)
-    avance_choque_der = avance_choque_izq;
 }
 void ruedas_girando(){
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP_DELANTE); //Cambio las ruedas a girar
@@ -457,19 +459,19 @@ int main(void){
     PWMGenConfigure(PWM1_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN);   // Módulo PWM contara hacia abajo
     PWMGenPeriodSet(PWM1_BASE, PWM_GEN_3, PERIOD_PWM);    // Carga la cuenta que establece la frecuencia de la señal PWM
 
-    //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_MEDIA_SUP_DELANTE);  // Establece el periodo (en este caso, comienza parado)
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);  // Establece el periodo (en este caso, comienza parado)
     PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, true); // Habilita la salida de la señal
-    //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_MEDIA_SUP_DELANTE);  // Establece el periodo (en este caso, comienza parado)
+    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);  // Establece el periodo (en este caso, comienza parado)
     PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, true); // Habilita la salida de la señal
     PWMGenEnable(PWM1_BASE, PWM_GEN_3); //Habilita/pone en marcha el generador PWM
 
     /*Habilita interrupciones del puerto B (sensor de contacto)*/
-    GPIOIntEnable(GPIO_PORTB_BASE, GPIO_INT_PIN_5);
+    GPIOIntEnable(GPIO_PORTB_BASE, GPIO_INT_PIN_4);
     IntEnable(INT_GPIOB);
 
     //Set each of the button GPIO pins as an input with a pull-up.
-    ROM_GPIODirModeSet(GPIO_PORTB_BASE, GPIO_PIN_5, GPIO_DIR_MODE_IN); //Direccionamiento: establece resistencia de pull-up para sensor de contacto
-    MAP_GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_5, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU); //Establece corriente para sensor de contacto
+    ROM_GPIODirModeSet(GPIO_PORTB_BASE, GPIO_PIN_4, GPIO_DIR_MODE_IN); //Direccionamiento: establece resistencia de pull-up para sensor de contacto
+    MAP_GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_4, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU); //Establece corriente para sensor de contacto
 
     /*Configuración de los LEDs RDG en modo GPIO*/
     GPIOPinWrite(GPIO_PORTF_BASE,  GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
