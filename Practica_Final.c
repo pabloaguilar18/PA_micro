@@ -39,8 +39,8 @@
 /*Parámetros motores*/
 #define PERIOD_PWM 12500 //Periodo de 20ms
 #define STOPCOUNT 950 //Ciclos para amplitud de pulso de parada (1.52ms)
-#define VEL_MEDIA_SUP_DELANTE 1100 //980 //1025 //1100 //1250 //Velocidad media superior
-#define VEL_MEDIA_INF_DELANTE 787 //925 //868 //787 //625 //Velocidad media inferior
+#define VEL_MEDIA_SUP_DELANTE 980 //1025 //1100 //1250 //Velocidad media superior
+#define VEL_MEDIA_INF_DELANTE 925 //868 //787 //625 //Velocidad media inferior
 #define VEL_MEDIA_SUP_ATRAS 980 //1025 //1100 //Velocidad media superior
 #define VEL_MEDIA_INF_ATRAS 918 //868 //787 //Velocidad media inferior
 
@@ -109,8 +109,6 @@ static portTASK_FUNCTION(Girar, pvParameters){ //Tarea del barrido de la caja y 
         giro_der = giro_izq;
 
         while((giro_der >= 0) || (giro_izq >= 0)){
-            ADCIntDisable(ADC0_BASE, 1);
-            TimerDisable(TIMER2_BASE, TIMER_A);
             xEventGroupWaitBits(FlagsEventos, encoder_giro, pdTRUE, pdFALSE, portMAX_DELAY);
 
             xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY);
@@ -122,12 +120,9 @@ static portTASK_FUNCTION(Girar, pvParameters){ //Tarea del barrido de la caja y 
             else if(dato == 4) giro_izq--;
             else if(dato == 64) giro_der--;
             if((comprobacion_giro == 0) && (giro_izq < 0) && (giro_der < 0)){ //Si llego al final del giro y no encuentro nada, avanzo un poco para volver a buscar posteriormente
-                //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
-                //PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
                 est = APROXIMACIÓN_CAJA;
-                comprobacion_avance = 0;
                 ruedas_hacia_delante();
-                TimerDisable(TIMER2_BASE, TIMER_A);
+                comprobacion_avance = 0;
             }
         }
     }
@@ -153,11 +148,9 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //Tarea de aproximación a cajas
             else if(dato == 4) inc_izq--;
             else if(dato == 64) inc_der--;
             if((comprobacion_avance == 0) && (inc_izq < 0) && (inc_der < 0)){ //Si llego al final del avance y no encuentro la caja, vuelvo al estado de barrido caja para volver a localizarla
-                TimerEnable(TIMER2_BASE, TIMER_A);
-                IntDisable(INT_GPIOB);
-                comprobacion_giro = 0;
                 est = BARRIDO_CAJA;
                 ruedas_girando();
+                comprobacion_giro = 0;
             }
         }
    }
@@ -231,8 +224,8 @@ static portTASK_FUNCTION(Choque_Linea, pvParameters){
             else if(dato == 64) giro_choque_der--;
             if((giro_choque_izq < 0) && (giro_choque_der < 0)){
                 est = APROXIMACIÓN_CAJA; //Cuando he terminado de girar, vuelvo a barrer para encontrar la siguiente caja
-                comprobacion_avance = 0;
                 ruedas_hacia_delante();
+                comprobacion_avance = 0;
             }
         }
     }
@@ -254,22 +247,18 @@ void Encoder(void){
             num_lineas--;
         }
         else{
-            IntDisable(INT_GPIOB);
-            TimerDisable(TIMER2_BASE, TIMER_A);
+            calculo_variables_choque();
+            est = CHOQUE_LINEA;
+            ruedas_hacia_atras();
             giro_der = -1;
             giro_izq = -1;
             inc_der = -1;
             inc_izq = -1;
             comprobacion_avance = 1;
             comprobacion_giro = 1;
-            calculo_variables_choque();
-
-            est = CHOQUE_LINEA;
-            ruedas_hacia_atras();
         }
     }
-
-    else if(((dato & GPIO_PIN_2) == GPIO_PIN_2) || ((dato & GPIO_PIN_6) == GPIO_PIN_6)){ //Si son los encoders de las ruedas, miro en qué estado estoy y envío tal flag
+    if(((dato & GPIO_PIN_2) == GPIO_PIN_2) || ((dato & GPIO_PIN_6) == GPIO_PIN_6)){ //Si son los encoders de las ruedas, miro en qué estado estoy y envío tal flag
         xQueueSendFromISR(cola_encoder, &dato, &higherPriorityTaskWoken); //Guardamos en la cola
 
         if(est == CHOQUE_LINEA) xEventGroupSetBitsFromISR(FlagsEventos, encoder_choque, &higherPriorityTaskWoken);
@@ -290,16 +279,11 @@ void configADC0_ISR(void){
     ADCSequenceDataGet(ADC0_BASE, 1, (uint32_t*)dato); //Cogemos el dato guardado
 
     if((est == BARRIDO_CAJA) && (dato[0] <= 1454 && dato[0] >= 697)){
-        TimerDisable(TIMER2_BASE, TIMER_A);
-        IntEnable(INT_GPIOB);
+        est = APROXIMACIÓN_CAJA;
+        ruedas_hacia_delante();
         giro_izq = -1;
         giro_der = -1;
         comprobacion_giro = 1;
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
-        SysCtlDelay(1000 * (SysCtlClockGet() / 3 / 1000));
-        est = APROXIMACIÓN_CAJA;
-        ruedas_hacia_delante();
     }
 
     ADCIntClear(ADC0_BASE, 1); //Limpiamos el flag de interrupciones
@@ -317,15 +301,11 @@ void configADC1_ISR(void){                                                      
     ADCSequenceDataGet(ADC0_BASE, 2, (uint32_t*)dato); //Cogemos el dato guardado
 
     if((est == BARRIDO_PALO) && (dato[0] <= 1114 && dato[0] >= 528)){
-        TimerDisable(TIMER2_BASE, TIMER_A);
+        est = APROXIMACIÓN_PALO;
+        ruedas_hacia_delante();
         giro_izq = -1;
         giro_der = -1;
         comprobacion_giro = 1;
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
-        PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
-        SysCtlDelay(1000 * (SysCtlClockGet() / 3 / 1000));
-        est = APROXIMACIÓN_PALO;
-        ruedas_hacia_delante();
     }
 
     ADCIntClear(ADC0_BASE, 2); //Limpiamos el flag de interrupciones
@@ -338,16 +318,13 @@ void SensorContacto(void){ //Informa que ya tiene dentro la caja
 
     GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_4); /*Limpia interrupción*/
 
-    inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
-    inc_der = -1;
-    comprobacion_avance = 1;
-    IntDisable(INT_GPIOB);
-    TimerEnable(TIMER2_BASE, TIMER_A);
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
-    PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
-    SysCtlDelay(1000 * (SysCtlClockGet() / 3 / 1000));
-    est = BARRIDO_PALO;
-    ruedas_girando();
+    if(est == APROXIMACIÓN_CAJA){
+        est = BARRIDO_PALO;
+        ruedas_girando();
+        inc_izq = -1;                                      //Dejo de girar, deshabilito el sensor de contacto y habilito el ADC de larga distancia
+        inc_der = -1;
+        comprobacion_avance = 1;
+    }
 
     GPIOIntClear(GPIO_PORTB_BASE, GPIO_PIN_4); /*Limpia interrupción*/
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
@@ -357,7 +334,6 @@ void ManejadorBotones(void){
     signed portBASE_TYPE higherPriorityTaskWoken = pdFALSE;
 
     TimerDisable(TIMER2_BASE, TIMER_A);
-    IntDisable(INT_GPIOD);
     IntDisable(INT_GPIOB);
     vTaskDelete(Manejador_Girar); //Si pulso cualquiera de los dos botones, entonces suspendo todas las tareas, si las quiero reanudar se pulsará el botón de RESET
     vTaskDelete(Manejador_Avanzar);
@@ -365,6 +341,10 @@ void ManejadorBotones(void){
     vTaskDelete(Manejador_Aproximacion_Palo);
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, STOPCOUNT);
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, STOPCOUNT);
+    GPIOIntClear(GPIO_PORTD_BASE, GPIO_INT_PIN_2 | GPIO_INT_PIN_3 | GPIO_INT_PIN_6 | GPIO_INT_PIN_7);
+    GPIOIntClear(GPIO_PORTF_BASE, ALL_BUTTONS);
+    ADCIntClear(ADC0_BASE, 1);
+    ADCIntClear(ADC0_BASE, 2);
 
     GPIOIntClear(GPIO_PORTF_BASE, ALL_BUTTONS); //limpiamos flags
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
@@ -537,9 +517,12 @@ int main(void){
     cola_encoder = xQueueCreate(8, sizeof(uint32_t)); //Creación de la cola del encoder
     if (cola_encoder == NULL) while(1);
 
-    SysCtlDelay(3000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 3 segundos antes de que empiece el programa
+    GPIOIntClear(GPIO_PORTD_BASE, GPIO_INT_PIN_2 | GPIO_INT_PIN_3 | GPIO_INT_PIN_6 | GPIO_INT_PIN_7);
+    GPIOIntClear(GPIO_PORTF_BASE, ALL_BUTTONS); //limpiamos flags
+    ADCIntClear(ADC0_BASE, 1); //Limpiamos el flag de interrupciones
+    ADCIntClear(ADC0_BASE, 2); //Limpiamos el flag de interrupciones
 
-    IntDisable(INT_GPIOB); //Deshabilito el pulsador, ya que no lo necesito al comenzar
+    SysCtlDelay(3000 * (SysCtlClockGet() / 3 / 1000)); //Esperamos 3 segundos antes de que empiece el programa
 
     ruedas_girando();
 
