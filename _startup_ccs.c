@@ -44,7 +44,6 @@ static void IntDefaultHandler(void);
 extern void _c_int00(void);
 extern void configADC0_ISR(void);
 extern void SensorContacto(void);
-extern void configADC1_ISR(void);
 extern void Encoder(void);
 extern void ManejadorBotones(void);
 
@@ -144,7 +143,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // uDMA Software Transfer
     IntDefaultHandler,                      // uDMA Error
     IntDefaultHandler,                      // ADC1 Sequence 0
-    configADC1_ISR,                         // ADC1 Sequence 1
+    IntDefaultHandler,                      // ADC1 Sequence 1
     IntDefaultHandler,                      // ADC1 Sequence 2
     IntDefaultHandler,                      // ADC1 Sequence 3
     0,                                      // Reserved
