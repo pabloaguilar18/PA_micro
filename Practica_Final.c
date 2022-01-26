@@ -97,6 +97,7 @@ typedef struct{
 Estado est = BARRIDO_CAJA; //Empezamos al comenzar en el estado de BARRIDO_CAJA
 
 /*Cabeceras de las funciones*/
+void calcula_avance();
 int calculo_sectores_recta(int distancia);
 int calculo_sectores_giro(int grados);
 void ruedas_girando_rapido();
@@ -160,22 +161,43 @@ static portTASK_FUNCTION(Avanzar, pvParameters){ //Tarea de aproximación a cajas
 }
 
 static portTASK_FUNCTION(Aproximacion_Palo, pvParameters){ //Tarea de aproximación a cajas y palo
+    int avance_palo = 50; //Avanzo 50 cm en línea recta
+
     while(1){
+        inc_izq_palo = calculo_sectores_recta(avance_palo); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
+        inc_der_palo = inc_izq;
+
         while(num_lineas < 3){ //Mientras no esté dentro del cuadrado negro interno, sigue avanzando
             xEventGroupWaitBits(FlagsEventos, encoder_caja_depositada, pdTRUE, pdFALSE, portMAX_DELAY); //Espero a que me llegue la flag del encoder de caja depositada
+
+            calcula_avance(); //Recibo el encoder y reduzco la variable
+        }
+
+        avance_palo = 2;
+        inc_izq_palo = calculo_sectores_recta(avance_palo); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
+        inc_der_palo = inc_izq;
+
+        while((inc_der_palo >= 0) || (inc_izq_palo >= 0)){
+            xEventGroupWaitBits(FlagsEventos, encoder_caja_depositada, pdTRUE, pdFALSE, portMAX_DELAY);
+
+            calcula_avance(); //Recibo el encoder y reduzco la variable
         }
 
         est = CAJA_COLOCADA; //Si ya he llegado, cambio el estado a CAJA_COLOCADA y pongo las ruedas hacia atrás
         ruedas_hacia_atras();
+        inc_izq_palo = calculo_sectores_recta(avance_palo); //Calculo los sectores que tienen que girar las ruedas para el avance buscado
+        inc_der_palo = inc_izq;
 
         while(num_lineas > 0){ //Mientras no me salga del cuadrado negro externo, sigue retrocediendo
             xEventGroupWaitBits(FlagsEventos, encoder_caja_depositada, pdTRUE, pdFALSE, portMAX_DELAY); //Espero a que me llegue la flag del encoder de caja depositada
+
+            calcula_avance(); //Recibo el encoder y reduzco la variable
         }
+
         inc_choque_izq = calculo_sectores_recta(avance); //Calculo los sectores que tienen que girar las ruedas para el avance de 5 cm
         inc_choque_der = inc_choque_izq;
         giro_choque_izq = calculo_sectores_giro(angulo_giro); //Calculo los sectores que tienen que girar las ruedas 30º
         giro_choque_der = giro_choque_izq;
-
         est = CHOQUE_LINEA; //Pongo el estado en CHOQUE_LÍNEA para simular como si me hubiera chocado en la última línea y pongo las ruedas a ir marcha atrás
         ruedas_hacia_atras();
    }
@@ -316,6 +338,19 @@ void ManejadorBotones(void){ //Si pulso cualquiera de los dos botones, entonces 
 }
 
 /***************************FUNCIONES_AUXILIARES********************/
+void calcula_avance(){
+    uint32_t dato;
+
+    xQueueReceive(cola_encoder, (void*) &dato, portMAX_DELAY); //Recibo el dato del encoder y reduzco la variable
+
+    if(dato == 68){
+        inc_izq_palo--;
+        inc_der_palo--;
+    }
+    else if(dato == 4) inc_izq_palo--;
+    else if(dato == 64) inc_der_palo--;
+}
+
 void ruedas_girando_rapido(){
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6, VEL_GIRO_RAPIDO); //Cambio las ruedas a girar rápido
     PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7, VEL_GIRO_RAPIDO);
